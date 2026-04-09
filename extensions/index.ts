@@ -13,7 +13,7 @@ const DEFAULT_MAX_INPUT = 2000;
 const DEFAULT_MAX_TOKENS = 30;
 
 function validatePositiveInteger(value: unknown, defaultValue: number): number {
-  return (Number.isFinite(value) && Number.isInteger(value) && (value as number >= 0)) ? value as number : defaultValue;
+  return (Number.isFinite(value) && Number.isInteger(value) && (value as number > 0)) ? value as number : defaultValue;
 }
 
 interface TemplateContext {
@@ -191,18 +191,19 @@ async function generateSessionTitle(
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
   const config = (pi as unknown as { config: TitleConfig }).config || {} as TitleConfig;
-  const cwd = process.cwd();
 
   const typedOn = pi.on as unknown as (
     event: string,
     handler: (event: AutoNameEvent) => Promise<AutoNameResult>
   ) => void;
 
-  typedOn("session_before_auto_name", async (event) => {
-    return generateSessionTitle(event, config, cwd, pi);
+  typedOn("before_auto_name", async (event) => {
+    const eventCwd = (event as any).cwd ?? process.cwd();
+    return generateSessionTitle(event, config, eventCwd, pi);
   });
 
-  typedOn("session_regenerate_title", async (event) => {
-    return generateSessionTitle(event, config, cwd, pi);
+  typedOn("regenerate_title", async (event) => {
+    const eventCwd = (event as any).cwd ?? process.cwd();
+    return generateSessionTitle(event, config, eventCwd, pi);
   });
 }
