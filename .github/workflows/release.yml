@@ -150,10 +150,11 @@ jobs:
 
           git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
 
-          if ! git push origin "$NEW_VERSION" 2>/dev/null; then
-            echo "Error: Failed to push tag $NEW_VERSION (may already exist)"
+          PUSH_OUTPUT=$(git push origin "$NEW_VERSION" 2>&1) || {
+            echo "Error: Failed to push tag $NEW_VERSION"
+            echo "Git output: $PUSH_OUTPUT"
             exit 1
-          fi
+          }
 
           echo "created_tag=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Created and pushed tag: $NEW_VERSION"
@@ -171,7 +172,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Summary
+      - name: Release Summary
         if: steps.bump.outputs.bump_type != 'skip' && steps.check_tag.outputs.has_tag == 'false'
         run: |
           echo "### Release Created!" >> $GITHUB_STEP_SUMMARY
@@ -179,7 +180,7 @@ jobs:
           echo "**Version:** ${{ steps.version.outputs.new_version || steps.check_tag.outputs.existing_tag || '(already tagged)' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Bump Type:** ${{ steps.bump.outputs.bump_type || '(skipped)' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Previous:** ${{ steps.get_tag.outputs.latest_tag || '(skipped)' }}" >> $GITHUB_STEP_SUMMARY
-      - name: Summary
+      - name: Skipped Release Summary
         if: steps.bump.outputs.bump_type == 'skip' || steps.check_tag.outputs.has_tag == 'true'
         run: |
           echo "### Release Skipped!" >> $GITHUB_STEP_SUMMARY

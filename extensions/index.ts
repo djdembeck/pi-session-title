@@ -165,9 +165,10 @@ async function generateSessionTitle(
       }
     }
 
-    const model = (pi as unknown as { model: { completeSimple: (...args: unknown[]) => Promise<string> } | undefined }).model;
+    const model = pi.model;
 
     if (!model) {
+      console.warn(`[session-title] pi.model is missing (pi.id=${pi.id}, pi.type=${pi.type}), skipping title generation`);
       return { cancel: true };
     }
 
@@ -190,20 +191,43 @@ async function generateSessionTitle(
 }
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
-  const config = (pi as unknown as { config: TitleConfig }).config || {} as TitleConfig;
+  const config = pi.config as TitleConfig || {} as TitleConfig;
 
-  const typedOn = pi.on as unknown as (
-    event: string,
-    handler: (event: AutoNameEvent) => Promise<AutoNameResult>
-  ) => void;
+  // Handle session start - generate title from first user message
+  pi.on("session_start", async (event: { firstUserMessage?: string; cwd?: string }) => {
+    if (!event.firstUserMessage) {
+      return { cancel: true };
+    }
 
-  typedOn("before_auto_name", async (event) => {
-    const eventCwd = (event as any).cwd ?? process.cwd();
-    return generateSessionTitle(event, config, eventCwd, pi);
+    const eventCwd = event.cwd ?? process.cwd();
+    const result = await generateSessionTitle(
+      { firstUserMessage: event.firstUserMessage },
+      config,
+      eventCwd,
+      pi
+    );
+
+    if ('name' in result && result.name) {
+      // Only set if no existing name
+      const currentName = await pi.getSessionName?.();
+      if (!currentName) {
+        await pi.setSessionName?.(result.name);
+      }
+    }
+
+    return result;
   });
 
-  typedOn("regenerate_title", async (event) => {
-    const eventCwd = (event as any).cwd ?? process.cwd();
-    return generateSessionTitle(event, config, eventCwd, pi);
+  // Handle agent end - opportunity to set title if not already set
+  pi.on("agent_end", async () => {
+    // Check if session needs a name
+    const currentName = await pi.getSessionName?.();
+    if (currentName) {
+      return { cancel: true };
+    }
+
+    // Title generation would require the first message context,
+    // which isn't available at agent_end. Return cancel.
+    return { cancel: true };
   });
 }
