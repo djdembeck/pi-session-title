@@ -12,6 +12,10 @@ Respond with ONLY the title, no quotes or punctuation.`;
 const DEFAULT_MAX_INPUT = 2000;
 const DEFAULT_MAX_TOKENS = 30;
 
+function validatePositiveInteger(value: unknown, defaultValue: number): number {
+  return (Number.isFinite(value) && Number.isInteger(value) && (value as number >= 0)) ? value as number : defaultValue;
+}
+
 interface TemplateContext {
   firstMessage: string;
   cwd: string;
@@ -148,13 +152,18 @@ async function generateSessionTitle(
   }
 
   try {
-    const maxInput = config.maxInputLength || DEFAULT_MAX_INPUT;
+    const maxInput = validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT);
     const truncatedInput = event.firstUserMessage.slice(0, maxInput);
 
     const templatePath = await resolveTemplatePath(cwd, config.templatePath);
-    const template = templatePath
-      ? await loadTemplate(templatePath)
-      : DEFAULT_TITLE_PROMPT;
+    let template = DEFAULT_TITLE_PROMPT;
+    if (templatePath) {
+      try {
+        template = await loadTemplate(templatePath);
+      } catch (error) {
+        console.error(`Failed to load template from ${templatePath}, using default:`, error);
+      }
+    }
 
     const model = (pi as unknown as { model: { completeSimple: (...args: unknown[]) => Promise<string> } | undefined }).model;
 
@@ -170,7 +179,7 @@ async function generateSessionTitle(
         cwd,
         timestamp: new Date().toISOString(),
       },
-      maxTokens: config.maxOutputTokens || DEFAULT_MAX_TOKENS,
+      maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
     });
 
     return { name: sanitizeTitle(title) };

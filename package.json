@@ -30,7 +30,7 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": ">=0.50.0"
+    "@mariozechner/pi-coding-agent": "^0.66.1"
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "^0.66.1",
