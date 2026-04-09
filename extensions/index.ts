@@ -20,7 +20,6 @@ interface TemplateContext {
 }
 
 interface TitleConfig {
-  modelId?: string;
   templatePath?: string;
   maxInputLength?: number;
   maxOutputTokens?: number;
@@ -138,6 +137,49 @@ type AutoNameEvent = {
 
 type AutoNameResult = { name: string } | { cancel: boolean };
 
+async function generateSessionTitle(
+  event: AutoNameEvent,
+  config: TitleConfig,
+  cwd: string,
+  pi: ExtensionAPI
+): Promise<AutoNameResult> {
+  if (config.enabled === false) {
+    return { cancel: true };
+  }
+
+  try {
+    const maxInput = config.maxInputLength || DEFAULT_MAX_INPUT;
+    const truncatedInput = event.firstUserMessage.slice(0, maxInput);
+
+    const templatePath = await resolveTemplatePath(cwd, config.templatePath);
+    const template = templatePath
+      ? await loadTemplate(templatePath)
+      : DEFAULT_TITLE_PROMPT;
+
+    const model = (pi as unknown as { model: { completeSimple: (...args: unknown[]) => Promise<string> } | undefined }).model;
+
+    if (!model) {
+      return { cancel: true };
+    }
+
+    const title = await generateTitle({
+      model,
+      template,
+      context: {
+        firstMessage: truncatedInput,
+        cwd,
+        timestamp: new Date().toISOString(),
+      },
+      maxTokens: config.maxOutputTokens || DEFAULT_MAX_TOKENS,
+    });
+
+    return { name: sanitizeTitle(title) };
+  } catch (error) {
+    console.error('Error in sessionTitleExtension:', error);
+    return { cancel: true };
+  }
+}
+
 export default function sessionTitleExtension(pi: ExtensionAPI) {
   const config = (pi as unknown as { config: TitleConfig }).config || {} as TitleConfig;
   const cwd = process.cwd();
@@ -148,40 +190,10 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
   ) => void;
 
   typedOn("session_before_auto_name", async (event) => {
-    if (config.enabled === false) {
-      return { cancel: true };
-    }
+    return generateSessionTitle(event, config, cwd, pi);
+  });
 
-    try {
-      const maxInput = config.maxInputLength || DEFAULT_MAX_INPUT;
-      const truncatedInput = event.firstUserMessage.slice(0, maxInput);
-
-      const templatePath = await resolveTemplatePath(cwd, config.templatePath);
-      const template = templatePath
-        ? await loadTemplate(templatePath)
-        : DEFAULT_TITLE_PROMPT;
-
-      const model = (pi as unknown as { model: { completeSimple: (...args: unknown[]) => Promise<string> } | undefined }).model;
-
-      if (!model) {
-        return { cancel: true };
-      }
-
-      const title = await generateTitle({
-        model,
-        template,
-        context: {
-          firstMessage: truncatedInput,
-          cwd,
-          timestamp: new Date().toISOString(),
-        },
-        maxTokens: config.maxOutputTokens || DEFAULT_MAX_TOKENS,
-      });
-
-      return { name: sanitizeTitle(title) };
-    } catch (error) {
-      console.error('Error in sessionTitleExtension:', error);
-      return { cancel: true };
-    }
+  typedOn("session_regenerate_title", async (event) => {
+    return generateSessionTitle(event, config, cwd, pi);
   });
 }
