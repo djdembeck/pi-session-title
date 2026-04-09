@@ -1,6 +1,6 @@
 # PI Session Title Extension
 
-Sophisticated session title generation extension for [pi](https://github.com/your-org/pi) with templates and dedicated model support.
+Sophisticated session title generation extension for [pi](https://github.com/mariozechner/pi) with templates and dedicated model support.
 
 ## Features
 
@@ -15,13 +15,13 @@ Sophisticated session title generation extension for [pi](https://github.com/you
 ### From npm
 
 ```bash
-npm install pi-session-title-extension
+npm install pi-session-title
 ```
 
 ### From source
 
 ```bash
-cd session-title-extension
+cd pi-session-title
 npm install
 npm run build
 ```
@@ -110,8 +110,8 @@ Regenerate the session title from the first user message.
 The extension exports a default function compatible with pi's extension API:
 
 ```typescript
-import type { ExtensionContext } from "@pi/types";
-import sessionTitleExtension from "pi-session-title-extension";
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import sessionTitleExtension from "pi-session-title";
 
 // pi core loads and calls:
 sessionTitleExtension(ctx);
@@ -119,7 +119,7 @@ sessionTitleExtension(ctx);
 
 ### Required Peer Dependencies
 
-- `@pi/types` - Type definitions for pi extension API
+- `@mariozechner/pi-coding-agent` - Type definitions for pi extension API
 
 ## Development
 

@@ -50,12 +50,15 @@ async function resolveTemplatePath(
   cwd: string,
   customPath?: string
 ): Promise<string | null> {
+  const existsAsync = async (p: string): Promise<boolean> =>
+    await fs.promises.access(p).then(() => true).catch(() => false);
+
   if (customPath) {
     const absolutePath = path.isAbsolute(customPath)
       ? customPath
       : path.join(cwd, customPath);
 
-    if (fs.existsSync(absolutePath)) {
+    if (await existsAsync(absolutePath)) {
       return absolutePath;
     }
     return null;
@@ -63,7 +66,7 @@ async function resolveTemplatePath(
 
   for (const relativePath of PROJECT_TEMPLATE_PATHS) {
     const fullPath = path.join(cwd, relativePath);
-    if (fs.existsSync(fullPath)) {
+    if (await existsAsync(fullPath)) {
       return fullPath;
     }
   }
@@ -72,7 +75,7 @@ async function resolveTemplatePath(
   if (home) {
     for (const getPath of GLOBAL_TEMPLATE_PATHS) {
       const fullPath = getPath(home);
-      if (fs.existsSync(fullPath)) {
+      if (await existsAsync(fullPath)) {
         return fullPath;
       }
     }
@@ -138,7 +141,6 @@ type AutoNameResult = { name: string } | { cancel: boolean };
 export default function sessionTitleExtension(pi: ExtensionAPI) {
   const config = (pi as unknown as { config: TitleConfig }).config || {} as TitleConfig;
   const cwd = process.cwd();
-  const signal = undefined as AbortSignal | undefined;
 
   const typedOn = pi.on as unknown as (
     event: string,
@@ -174,11 +176,11 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
           timestamp: new Date().toISOString(),
         },
         maxTokens: config.maxOutputTokens || DEFAULT_MAX_TOKENS,
-        signal,
       });
 
       return { name: sanitizeTitle(title) };
     } catch (error) {
+      console.error('Error in sessionTitleExtension:', error);
       return { cancel: true };
     }
   });

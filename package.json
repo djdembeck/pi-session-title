@@ -24,14 +24,17 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": ">=0.50.0"
   },
   "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.66.1",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.2"
   },
   "scripts": {
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "vitest run",
