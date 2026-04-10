@@ -18,7 +18,7 @@ vi.mock("node:fs", async () => {
 describe("sessionTitleExtension", () => {
   const originalEnv = { ...process.env };
   type Handler = (event: { firstUserMessage: string }) => Promise<{ name?: string; cancel?: boolean }>;
-  type MockPi = ExtensionAPI & { _handler?: Handler };
+  type MockPi = ExtensionAPI & { _handlers?: Record<string, Handler> };
   let mockPi: MockPi;
 
   beforeEach(() => {
@@ -27,8 +27,12 @@ describe("sessionTitleExtension", () => {
 
     mockPi = {
       on: vi.fn((event: string, handler: Handler) => {
-        mockPi._handler = handler;
+        if (!mockPi._handlers) {
+          mockPi._handlers = {};
+        }
+        mockPi._handlers[event] = handler;
       }),
+      _handlers: {} as Record<string, Handler>,
     } as unknown as MockPi;
   });
 
@@ -55,7 +59,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Hello world" });
 
@@ -80,7 +84,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Test" });
 
@@ -109,7 +113,7 @@ describe("sessionTitleExtension", () => {
       };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Test" });
 
@@ -136,7 +140,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -161,7 +165,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -185,7 +189,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -198,7 +202,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: false };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -210,7 +214,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -234,7 +238,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       const result = await handler({ firstUserMessage: "Test" });
 
@@ -265,7 +269,7 @@ describe("sessionTitleExtension", () => {
       };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Hello" });
 
@@ -292,7 +296,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Hello world" });
 
@@ -322,7 +326,7 @@ describe("sessionTitleExtension", () => {
       (mockPi as unknown as { config: { enabled: boolean } }).config = { enabled: true };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: "Test" });
 
@@ -359,7 +363,7 @@ describe("sessionTitleExtension", () => {
       };
 
       sessionTitleExtension(mockPi as ExtensionAPI);
-      const handler = mockPi._handler!;
+      const handler = mockPi._handlers!['session_start']!;
 
       await handler({ firstUserMessage: longMessage });
 
