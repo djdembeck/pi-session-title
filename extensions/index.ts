@@ -248,6 +248,9 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
           pi.setSessionName(sanitizedName);
           titleSet = true;
         }
+      } else {
+        // Empty sanitized name - mark as handled to avoid retry loops
+        titleSet = true;
       }
     } catch (error) {
       console.error('Error in sessionTitleExtension:', error);

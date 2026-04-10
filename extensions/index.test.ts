@@ -324,6 +324,41 @@ describe("sessionTitleExtension", () => {
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
     });
+
+    it("should skip when session already has a name", async () => {
+      const fsMock = fs as unknown as {
+        promises: {
+          access: ReturnType<typeof vi.fn>;
+          readFile: ReturnType<typeof vi.fn>;
+        };
+      };
+
+      fsMock.promises.access.mockResolvedValueOnce(undefined);
+      fsMock.promises.readFile.mockResolvedValueOnce("Generate title: {{firstMessage}}");
+
+      const { complete } = await import("@mariozechner/pi-ai");
+      vi.mocked(complete).mockResolvedValue({
+        content: [{ type: "text", text: "My existing title" }],
+      } as unknown as Awaited<ReturnType<typeof complete>>);
+
+      // Mock session already has a name
+      mockPi.getSessionName.mockReturnValue("Existing Session");
+
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!['input'] as InputHandler;
+      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
+
+      await inputHandler({ text: "Test message", source: "user" }, ctx);
+      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
+
+      // readFile should not have been called since session already has a name
+      expect(fsMock.promises.readFile).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
   });
 
   describe("Template discovery", () => {
