@@ -1,4 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { complete } from "@mariozechner/pi-ai";
+import type { Model, Api } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -108,12 +110,9 @@ function sanitizeTitle(title: string): string {
 }
 
 async function generateTitle(options: {
-  model: {
-    completeSimple(prompt: string, options?: {
-      maxTokens?: number;
-      signal?: AbortSignal;
-    }): Promise<string>;
-  };
+  model: Model<Api>;
+  apiKey: string;
+  headers?: Record<string, string>;
   template: string;
   context: {
     firstMessage: string;
@@ -123,111 +122,139 @@ async function generateTitle(options: {
   maxTokens: number;
   signal?: AbortSignal;
 }): Promise<string> {
-  const { model, template, context, maxTokens, signal } = options;
+  const { model, apiKey, headers, template, context, maxTokens, signal } = options;
 
   const prompt = renderTemplate(template, context);
 
-  const response = await model.completeSimple(prompt, {
-    maxTokens,
-    signal,
-  });
+  const response = await complete(
+    model,
+    {
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: prompt }],
+        timestamp: Date.now(),
+      }],
+    },
+    {
+      apiKey,
+      headers,
+      maxTokens,
+      signal,
+    }
+  );
 
-  return response;
+  const text = response.content
+    .filter((c): c is { type: "text"; text: string } => c.type === "text")
+    .map(c => c.text)
+    .join("");
+
+  return text;
 }
 
-type AutoNameEvent = {
-  firstUserMessage: string;
-};
+// Track if we've already set a title for this session
+let titleSet = false;
+let firstMessage: string | null = null;
 
-type AutoNameResult = { name: string } | { cancel: boolean };
-
-async function generateSessionTitle(
-  event: AutoNameEvent,
-  config: TitleConfig,
-  cwd: string,
-  pi: ExtensionAPI
-): Promise<AutoNameResult> {
-  if (config.enabled === false) {
-    return { cancel: true };
-  }
-
-  try {
-    const maxInput = validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT);
-    const truncatedInput = event.firstUserMessage.slice(0, maxInput);
-
-    const templatePath = await resolveTemplatePath(cwd, config.templatePath);
-    let template = DEFAULT_TITLE_PROMPT;
-    if (templatePath) {
-      try {
-        template = await loadTemplate(templatePath);
-      } catch (error) {
-        console.error(`Failed to load template from ${templatePath}, using default:`, error);
-      }
-    }
-
-    const model = pi.model;
-
-    if (!model) {
-      console.warn(`[session-title] pi.model is missing (pi.id=${pi.id}, pi.type=${pi.type}), skipping title generation`);
-      return { cancel: true };
-    }
-
-    const title = await generateTitle({
-      model,
-      template,
-      context: {
-        firstMessage: truncatedInput,
-        cwd,
-        timestamp: new Date().toISOString(),
-      },
-      maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
-    });
-
-    return { name: sanitizeTitle(title) };
-  } catch (error) {
-    console.error('Error in sessionTitleExtension:', error);
-    return { cancel: true };
-  }
+export function resetState() {
+  titleSet = false;
+  firstMessage = null;
 }
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
-  const config = pi.config as TitleConfig || {} as TitleConfig;
+  // Read config from environment or use defaults
+  const config: TitleConfig = {
+    templatePath: process.env.PI_TITLE_TEMPLATE,
+    maxInputLength: process.env.PI_TITLE_MAX_INPUT ? parseInt(process.env.PI_TITLE_MAX_INPUT, 10) : DEFAULT_MAX_INPUT,
+    maxOutputTokens: process.env.PI_TITLE_MAX_TOKENS ? parseInt(process.env.PI_TITLE_MAX_TOKENS, 10) : DEFAULT_MAX_TOKENS,
+    enabled: process.env.PI_TITLE_ENABLED !== "false",
+  };
 
-  // Handle session start - generate title from first user message
-  pi.on("session_start", async (event: { firstUserMessage?: string; cwd?: string }) => {
-    if (!event.firstUserMessage) {
-      return { cancel: true };
+  // Capture the first user message via input event
+  pi.on("input", async (event, ctx) => {
+    // Skip if already processed or from extension
+    if (titleSet || event.source === "extension") {
+      return { action: "continue" };
     }
 
-    const eventCwd = event.cwd ?? process.cwd();
-    const result = await generateSessionTitle(
-      { firstUserMessage: event.firstUserMessage },
-      config,
-      eventCwd,
-      pi
-    );
-
-    if ('name' in result && result.name) {
-      // Only set if no existing name
-      const currentName = await pi.getSessionName?.();
-      if (!currentName) {
-        await pi.setSessionName?.(result.name);
-      }
+    // Store the first message
+    if (!firstMessage && event.text.trim()) {
+      firstMessage = event.text.trim();
     }
 
-    return result;
+    return { action: "continue" };
   });
 
-  // Handle agent end - opportunity to set title if not already set
-  pi.on("agent_end", async () => {
-    // Check if session needs a name
-    const currentName = await pi.getSessionName?.();
-    if (currentName) {
-      return { cancel: true };
+  // Generate title at turn_end (after first response completes)
+  pi.on("turn_end", async (event, ctx) => {
+    // Skip if already set or no first message captured
+    if (titleSet || !firstMessage) {
+      return;
     }
 
-    // Title generation would require the first message context,
-    // which isn't available at agent_end. Return cancel.
-    return { cancel: true };
+    // Skip if disabled
+    if (config.enabled === false) {
+      return;
+    }
+
+    try {
+      const maxInput = validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT);
+      const truncatedInput = firstMessage.slice(0, maxInput);
+
+      const cwd = ctx.cwd;
+      const templatePath = await resolveTemplatePath(cwd, config.templatePath);
+      let template = DEFAULT_TITLE_PROMPT;
+      if (templatePath) {
+        try {
+          template = await loadTemplate(templatePath);
+        } catch (error) {
+          console.error(`Failed to load template from ${templatePath}, using default:`, error);
+        }
+      }
+
+      const model = ctx.model;
+      if (!model) {
+        console.warn(`[session-title] No model available, skipping title generation`);
+        return;
+      }
+
+      // Get API key for the model
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok || !auth.apiKey) {
+        console.warn(`[session-title] No API key available for model, skipping title generation`);
+        return;
+      }
+
+      const title = await generateTitle({
+        model: model,
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        template,
+        context: {
+          firstMessage: truncatedInput,
+          cwd,
+          timestamp: new Date().toISOString(),
+        },
+        maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
+        signal: ctx.signal,
+      });
+
+      const sanitizedName = sanitizeTitle(title);
+      if (sanitizedName) {
+        // Check if session already has a name
+        const currentName = pi.getSessionName();
+        if (!currentName) {
+          pi.setSessionName(sanitizedName);
+          titleSet = true;
+        }
+      }
+    } catch (error) {
+      console.error('Error in sessionTitleExtension:', error);
+    }
+  });
+
+  // Reset state on session start
+  pi.on("session_start", async (event, ctx) => {
+    titleSet = false;
+    firstMessage = null;
   });
 }
