@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
-import sessionTitleExtension, { resetState } from "./index.js";
+import * as path from "node:path";
+import sessionTitleExtension from "./index.js";
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
@@ -35,7 +36,6 @@ describe("sessionTitleExtension", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     process.env = { ...originalEnv };
-    resetState();
 
     mockPi = {
       on: vi.fn((event: string, handler: InputHandler | TurnEndHandler | SessionStartHandler) => {
@@ -394,6 +394,9 @@ describe("sessionTitleExtension", () => {
     });
 
     it("should check project templates before global", async () => {
+      // Set deterministic HOME to ensure global template path is predictable
+      process.env.HOME = "/mock/home";
+
       const fsMock = fs as unknown as {
         promises: {
           access: ReturnType<typeof vi.fn>;
@@ -401,9 +404,11 @@ describe("sessionTitleExtension", () => {
         };
       };
 
+      // Access fails for .pi project path, succeeds for .omp project path
+      // This makes the test check the exact project path used
       fsMock.promises.access
-        .mockRejectedValueOnce(new Error("Not found"))
-        .mockResolvedValueOnce(undefined);
+        .mockRejectedValueOnce(new Error("Not found"))  // .pi/prompts/title.md in cwd - not found
+        .mockResolvedValueOnce(undefined);                // .omp/prompts/title.md in cwd - found!
       fsMock.promises.readFile.mockResolvedValueOnce("Project template");
 
       const { complete } = await import("@mariozechner/pi-ai");
@@ -421,10 +426,12 @@ describe("sessionTitleExtension", () => {
       await inputHandler({ text: "Test", source: "user" }, ctx);
       await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
+      // Verify exact project template path was chosen
       const readFileCalls = fsMock.promises.readFile.mock.calls;
       expect(readFileCalls.length).toBeGreaterThan(0);
-      const pathArg = readFileCalls[0][0] as string;
-      expect(pathArg.includes(".pi") || pathArg.includes(".omp")).toBe(true);
+      const actualPath = readFileCalls[0][0] as string;
+      const expectedProjectPath = path.join(ctx.cwd!, ".omp/prompts/title.md");
+      expect(actualPath).toBe(expectedProjectPath);
     });
   });
 

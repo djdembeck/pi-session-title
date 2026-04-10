@@ -151,16 +151,11 @@ async function generateTitle(options: {
   return text;
 }
 
-// Track if we've already set a title for this session
-let titleSet = false;
-let firstMessage: string | null = null;
-
-export function resetState() {
-  titleSet = false;
-  firstMessage = null;
-}
-
 export default function sessionTitleExtension(pi: ExtensionAPI) {
+  // Instance-scoped state
+  let titleSet = false;
+  let firstMessage: string | null = null;
+
   // Read config from environment or use defaults
   const config: TitleConfig = {
     templatePath: process.env.PI_TITLE_TEMPLATE,
@@ -186,6 +181,13 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
 
   // Generate title at turn_end (after first response completes)
   pi.on("turn_end", async (event, ctx) => {
+    // Early exit: if session already has a name, skip title generation
+    const existingName = pi.getSessionName();
+    if (existingName) {
+      titleSet = true;
+      return;
+    }
+
     // Skip if already set or no first message captured
     if (titleSet || !firstMessage) {
       return;
