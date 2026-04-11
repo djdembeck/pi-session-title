@@ -1,0 +1,58 @@
+{
+  "name": "pi-session-title",
+  "version": "1.0.0",
+  "description": "Sophisticated session title generation extension for pi with templates and dedicated model support",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "session-title",
+    "title-generation",
+    "ai"
+  ],
+  "license": "MIT",
+  "author": "djdembeck",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./extensions/index.ts",
+      "types": "./extensions/index.ts"
+    }
+  },
+  "homepage": "https://github.com/djdembeck/pi-session-title#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/djdembeck/pi-session-title"
+  },
+  "files": [
+    "extensions/**/*.ts",
+    "!extensions/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.66.1"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@types/node": "^20.0.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.2"
+  },
+  "scripts": {
+    "dev": "tsc --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
