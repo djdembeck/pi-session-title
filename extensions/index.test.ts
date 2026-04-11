@@ -31,7 +31,10 @@ describe("sessionTitleExtension", () => {
   type MockPi = ExtensionAPI & { 
     _handlers?: Record<string, InputHandler | TurnEndHandler | SessionStartHandler>;
   };
-  let mockPi: MockPi;
+  let mockPi: MockPi & {
+    getSessionName: ReturnType<typeof vi.fn>;
+    setSessionName: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -47,7 +50,10 @@ describe("sessionTitleExtension", () => {
       getSessionName: vi.fn().mockReturnValue(undefined),
       setSessionName: vi.fn(),
       _handlers: {} as Record<string, InputHandler | TurnEndHandler | SessionStartHandler>,
-    } as unknown as MockPi;
+    } as unknown as MockPi & {
+      getSessionName: ReturnType<typeof vi.fn>;
+      setSessionName: ReturnType<typeof vi.fn>;
+    };
   });
 
   afterEach(() => {
