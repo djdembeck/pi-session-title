@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
-import type { Model, Api } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -13,10 +13,6 @@ Respond with ONLY the title, no quotes or punctuation.`;
 
 const DEFAULT_MAX_INPUT = 2000;
 const DEFAULT_MAX_TOKENS = 30;
-
-function validatePositiveInteger(value: unknown, defaultValue: number): number {
-  return (Number.isFinite(value) && Number.isInteger(value) && (value as number > 0)) ? value as number : defaultValue;
-}
 
 interface TemplateContext {
   firstMessage: string;
@@ -32,13 +28,15 @@ interface TitleConfig {
   enabled?: boolean;
 }
 
-function simpleTemplate(template: string, context: TemplateContext): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    if (key in context) {
-      return context[key];
-    }
-    return match;
-  });
+type SessionNameCapableApi = ExtensionAPI & {
+  getSessionName?: () => string | undefined;
+  setSessionName?: (name: string) => void | Promise<void>;
+};
+
+interface SessionNameApi {
+  available: boolean;
+  get: () => string | undefined;
+  set: (name: string) => Promise<void>;
 }
 
 const PROJECT_TEMPLATE_PATHS = [
@@ -51,12 +49,81 @@ const GLOBAL_TEMPLATE_PATHS = [
   (home: string) => path.join(home, ".omp", "agent", "prompts", "title.md"),
 ];
 
-async function resolveTemplatePath(
-  cwd: string,
-  customPath?: string
-): Promise<string | null> {
-  const existsAsync = async (p: string): Promise<boolean> =>
-    await fs.promises.access(p).then(() => true).catch(() => false);
+function validatePositiveInteger(value: unknown, defaultValue: number): number {
+  return Number.isFinite(value) && Number.isInteger(value) && (value as number) > 0
+    ? value as number
+    : defaultValue;
+}
+
+function createConfigFromEnv(): TitleConfig {
+  return {
+    templatePath: process.env.PI_TITLE_TEMPLATE,
+    maxInputLength: process.env.PI_TITLE_MAX_INPUT
+      ? parseInt(process.env.PI_TITLE_MAX_INPUT, 10)
+      : DEFAULT_MAX_INPUT,
+    maxOutputTokens: process.env.PI_TITLE_MAX_TOKENS
+      ? parseInt(process.env.PI_TITLE_MAX_TOKENS, 10)
+      : DEFAULT_MAX_TOKENS,
+    enabled: process.env.PI_TITLE_ENABLED !== "false",
+  };
+}
+
+function createSessionNameApi(pi: ExtensionAPI): SessionNameApi {
+  const api = pi as SessionNameCapableApi;
+  const getSessionName = typeof api.getSessionName === "function"
+    ? api.getSessionName.bind(api)
+    : undefined;
+  const setSessionName = typeof api.setSessionName === "function"
+    ? api.setSessionName.bind(api)
+    : undefined;
+
+  return {
+    available: getSessionName !== undefined && setSessionName !== undefined,
+    get: () => getSessionName?.() ?? undefined,
+    set: async (name: string) => {
+      if (!setSessionName) {
+        return;
+      }
+      await setSessionName(name);
+    },
+  };
+}
+
+function simpleTemplate(template: string, context: TemplateContext): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    if (key in context) {
+      return context[key];
+    }
+    return match;
+  });
+}
+
+function renderTemplate(
+  template: string,
+  context: { firstMessage: string; cwd: string; timestamp: string },
+): string {
+  return simpleTemplate(template, context);
+}
+
+function sanitizeTitle(title: string): string {
+  return title
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\n+/g, " ")
+    .slice(0, 72);
+}
+
+function isPromptTitleCandidate(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return !trimmed.startsWith("/") && !trimmed.startsWith("!") && !trimmed.startsWith("$");
+}
+
+async function resolveTemplatePath(cwd: string, customPath?: string): Promise<string | null> {
+  const existsAsync = async (candidatePath: string): Promise<boolean> =>
+    await fs.promises.access(candidatePath).then(() => true).catch(() => false);
 
   if (customPath) {
     const absolutePath = path.isAbsolute(customPath)
@@ -90,23 +157,7 @@ async function resolveTemplatePath(
 }
 
 async function loadTemplate(templatePath: string): Promise<string> {
-  const content = await fs.promises.readFile(templatePath, "utf-8");
-  return content;
-}
-
-function renderTemplate(
-  template: string,
-  context: { firstMessage: string; cwd: string; timestamp: string }
-): string {
-  return simpleTemplate(template, context);
-}
-
-function sanitizeTitle(title: string): string {
-  return title
-    .trim()
-    .replace(/^["']|["']$/g, "")
-    .replace(/\n+/g, " ")
-    .slice(0, 72);
+  return fs.promises.readFile(templatePath, "utf-8");
 }
 
 async function generateTitle(options: {
@@ -123,9 +174,7 @@ async function generateTitle(options: {
   signal?: AbortSignal;
 }): Promise<string> {
   const { model, apiKey, headers, template, context, maxTokens, signal } = options;
-
   const prompt = renderTemplate(template, context);
-
   const response = await complete(
     model,
     {
@@ -140,71 +189,60 @@ async function generateTitle(options: {
       headers,
       maxTokens,
       signal,
-    }
+    },
   );
 
-  const text = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map(c => c.text)
+  return response.content
+    .filter((content): content is { type: "text"; text: string } => content.type === "text")
+    .map(content => content.text)
     .join("");
-
-  return text;
 }
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
-  // Instance-scoped state
-  let titleSet = false;
+  let titleSettled = false;
   let firstMessage: string | null = null;
+  const config = createConfigFromEnv();
+  const sessionNameApi = createSessionNameApi(pi);
 
-  // Read config from environment or use defaults
-  const config: TitleConfig = {
-    templatePath: process.env.PI_TITLE_TEMPLATE,
-    maxInputLength: process.env.PI_TITLE_MAX_INPUT ? parseInt(process.env.PI_TITLE_MAX_INPUT, 10) : DEFAULT_MAX_INPUT,
-    maxOutputTokens: process.env.PI_TITLE_MAX_TOKENS ? parseInt(process.env.PI_TITLE_MAX_TOKENS, 10) : DEFAULT_MAX_TOKENS,
-    enabled: process.env.PI_TITLE_ENABLED !== "false",
-  };
-
-  // Capture the first user message via input event
   pi.on("input", async (event, ctx) => {
-    // Skip if already processed or from extension
-    if (titleSet || event.source === "extension") {
+    if (titleSettled || event.source === "extension") {
       return { action: "continue" };
     }
 
-    // Store the first message
-    if (!firstMessage && event.text.trim()) {
+    const existingName = sessionNameApi.get();
+    if (existingName) {
+      titleSettled = true;
+      return { action: "continue" };
+    }
+
+    if (config.enabled === false || !sessionNameApi.available) {
+      titleSettled = true;
+      return { action: "continue" };
+    }
+
+    if (!isPromptTitleCandidate(event.text)) {
+      return { action: "continue" };
+    }
+
+    if (!firstMessage) {
       firstMessage = event.text.trim();
     }
 
-    return { action: "continue" };
-  });
-
-  // Generate title at turn_end (after first response completes)
-  pi.on("turn_end", async (event, ctx) => {
-    // Early exit: if session already has a name, skip title generation
-    const existingName = pi.getSessionName();
-    if (existingName) {
-      titleSet = true;
-      return;
+    const model = ctx.model;
+    if (!model) {
+      return { action: "continue" };
     }
 
-    // Skip if already set or no first message captured
-    if (titleSet || !firstMessage) {
-      return;
-    }
-
-    // Skip if disabled
-    if (config.enabled === false) {
-      return;
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+    if (!auth.ok || !auth.apiKey) {
+      return { action: "continue" };
     }
 
     try {
-      const maxInput = validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT);
-      const truncatedInput = firstMessage.slice(0, maxInput);
-
       const cwd = ctx.cwd;
       const templatePath = await resolveTemplatePath(cwd, config.templatePath);
       let template = DEFAULT_TITLE_PROMPT;
+
       if (templatePath) {
         try {
           template = await loadTemplate(templatePath);
@@ -213,26 +251,16 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
         }
       }
 
-      const model = ctx.model;
-      if (!model) {
-        console.warn(`[session-title] No model available, skipping title generation`);
-        return;
-      }
-
-      // Get API key for the model
-      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok || !auth.apiKey) {
-        console.warn(`[session-title] No API key available for model, skipping title generation`);
-        return;
-      }
-
       const title = await generateTitle({
-        model: model,
+        model,
         apiKey: auth.apiKey,
         headers: auth.headers,
         template,
         context: {
-          firstMessage: truncatedInput,
+          firstMessage: firstMessage.slice(
+            0,
+            validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT),
+          ),
           cwd,
           timestamp: new Date().toISOString(),
         },
@@ -240,26 +268,25 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
         signal: ctx.signal,
       });
 
-      const sanitizedName = sanitizeTitle(title);
-      if (sanitizedName) {
-        // Check if session already has a name
-        const currentName = pi.getSessionName();
-        if (!currentName) {
-          pi.setSessionName(sanitizedName);
-          titleSet = true;
-        }
-      } else {
-        // Empty sanitized name - mark as handled to avoid retry loops
-        titleSet = true;
+      const sanitizedTitle = sanitizeTitle(title);
+      if (!sanitizedTitle) {
+        titleSettled = true;
+        return { action: "continue" };
       }
+
+      if (!sessionNameApi.get()) {
+        await sessionNameApi.set(sanitizedTitle);
+      }
+      titleSettled = true;
     } catch (error) {
-      console.error('Error in sessionTitleExtension:', error);
+      console.error("Error in sessionTitleExtension:", error);
     }
+
+    return { action: "continue" };
   });
 
-  // Reset state on session start
-  pi.on("session_start", async (event, ctx) => {
-    titleSet = false;
+  pi.on("session_start", async () => {
+    titleSettled = false;
     firstMessage = null;
   });
 }
