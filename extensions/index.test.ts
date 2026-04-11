@@ -26,10 +26,9 @@ vi.mock("@mariozechner/pi-ai", async () => {
 describe("sessionTitleExtension", () => {
   const originalEnv = { ...process.env };
   type InputHandler = (event: { text: string; source: string }, ctx: Partial<ExtensionContext>) => Promise<{ action: string }>;
-  type TurnEndHandler = (event: { turnIndex: number; message: unknown; toolResults: unknown[] }, ctx: Partial<ExtensionContext>) => Promise<void>;
   type SessionStartHandler = (event: { type: string; reason: string }, ctx: Partial<ExtensionContext>) => Promise<void>;
   type MockPi = ExtensionAPI & { 
-    _handlers?: Record<string, InputHandler | TurnEndHandler | SessionStartHandler>;
+    _handlers?: Record<string, InputHandler | SessionStartHandler>;
   };
   let mockPi: MockPi & {
     getSessionName: ReturnType<typeof vi.fn>;
@@ -41,15 +40,15 @@ describe("sessionTitleExtension", () => {
     process.env = { ...originalEnv };
 
     mockPi = {
-      on: vi.fn((event: string, handler: InputHandler | TurnEndHandler | SessionStartHandler) => {
+      on: vi.fn((event: string, handler: InputHandler | SessionStartHandler) => {
         if (!mockPi._handlers) {
           mockPi._handlers = {};
         }
         mockPi._handlers[event] = handler;
       }),
       getSessionName: vi.fn().mockReturnValue(undefined),
-      setSessionName: vi.fn(),
-      _handlers: {} as Record<string, InputHandler | TurnEndHandler | SessionStartHandler>,
+      setSessionName: vi.fn().mockResolvedValue(undefined),
+      _handlers: {} as Record<string, InputHandler | SessionStartHandler>,
     } as unknown as MockPi & {
       getSessionName: ReturnType<typeof vi.fn>;
       setSessionName: ReturnType<typeof vi.fn>;
@@ -106,10 +105,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Hello world", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(complete).toHaveBeenCalled();
       const callArgs = vi.mocked(complete).mock.calls[0];
@@ -136,10 +133,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       const callArgs = vi.mocked(complete).mock.calls[0];
       const messages = callArgs[1].messages as Array<{ content: Array<{ text: string }> }>;
@@ -168,10 +163,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       const callArgs = vi.mocked(complete).mock.calls[0];
       const messages = callArgs[1].messages as Array<{ content: Array<{ text: string }> }>;
@@ -201,10 +194,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).toHaveBeenCalledWith("Quoted Title");
     });
@@ -229,10 +220,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).toHaveBeenCalledWith("A".repeat(72));
     });
@@ -256,10 +245,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).toHaveBeenCalledWith("Line1 Line2 Line3");
     });
@@ -274,10 +261,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
 
@@ -298,10 +283,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
     });
@@ -323,10 +306,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
     });
@@ -355,15 +336,117 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test message", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       // readFile should not have been called since session already has a name
       expect(fsMock.promises.readFile).not.toHaveBeenCalled();
       expect(complete).not.toHaveBeenCalled();
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Input handling edge cases", () => {
+    it("should skip when input is from extension", async () => {
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!['input'] as InputHandler;
+
+      await inputHandler({ text: "Test message", source: "extension" }, ctx);
+
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
+
+    it("should skip when input is empty/whitespace", async () => {
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!['input'] as InputHandler;
+
+      await inputHandler({ text: "   ", source: "user" }, ctx);
+
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
+
+    it("should skip slash commands", async () => {
+      const { complete } = await import("@mariozechner/pi-ai");
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!["input"] as InputHandler;
+
+      await inputHandler({ text: "/help", source: "interactive" }, ctx);
+
+      expect(complete).not.toHaveBeenCalled();
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
+
+    it("should skip bash commands", async () => {
+      const { complete } = await import("@mariozechner/pi-ai");
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!["input"] as InputHandler;
+
+      await inputHandler({ text: "!ls -la", source: "interactive" }, ctx);
+
+      expect(complete).not.toHaveBeenCalled();
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
+
+    it("should stop immediately when session name API is unavailable", async () => {
+      const { complete } = await import("@mariozechner/pi-ai");
+      const ctx = createMockContext();
+      const handlers: Record<string, InputHandler | SessionStartHandler> = {};
+      const piWithoutSessionNaming = {
+        on: vi.fn((event: string, handler: InputHandler | SessionStartHandler) => {
+          handlers[event] = handler;
+        }),
+      } as unknown as ExtensionAPI;
+
+      sessionTitleExtension(piWithoutSessionNaming);
+
+      const inputHandler = handlers["input"] as InputHandler;
+
+      await inputHandler({ text: "Real prompt", source: "interactive" }, ctx);
+
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it("should not regenerate title if already generated", async () => {
+      const fsMock = fs as unknown as {
+        promises: {
+          access: ReturnType<typeof vi.fn>;
+          readFile: ReturnType<typeof vi.fn>;
+        };
+      };
+      fsMock.promises.access.mockRejectedValue(new Error("File not found"));
+
+      const { complete } = await import("@mariozechner/pi-ai");
+      vi.mocked(complete).mockResolvedValue({
+        content: [{ type: "text", text: "First Title" }],
+      } as unknown as Awaited<ReturnType<typeof complete>>);
+
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!['input'] as InputHandler;
+
+      // First input generates a title
+      await inputHandler({ text: "First message", source: "user" }, ctx);
+      expect(mockPi.setSessionName).toHaveBeenCalledWith("First Title");
+
+      vi.mocked(complete).mockClear();
+
+      // Second input should NOT generate another title
+      await inputHandler({ text: "Second message", source: "user" }, ctx);
+      expect(complete).not.toHaveBeenCalled();
     });
   });
 
@@ -391,10 +474,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Hello", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       expect(fsMock.promises.readFile).toHaveBeenCalledWith(
         expect.stringContaining("custom.md"),
@@ -423,10 +504,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Hello world", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       const callArgs = vi.mocked(complete).mock.calls[0];
       const messages = callArgs[1].messages as Array<{ content: Array<{ text: string }> }>;
@@ -462,10 +541,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: "Test", source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       // Verify exact project template path was chosen
       const readFileCalls = fsMock.promises.readFile.mock.calls;
@@ -476,7 +553,7 @@ describe("sessionTitleExtension", () => {
     });
   });
 
-  describe("Input handling", () => {
+  describe("Input truncation", () => {
     it("should truncate input to maxInputLength", async () => {
       const fsMock = fs as unknown as {
         promises: {
@@ -511,10 +588,8 @@ describe("sessionTitleExtension", () => {
       sessionTitleExtension(mockPi as ExtensionAPI);
 
       const inputHandler = mockPi._handlers!['input'] as InputHandler;
-      const turnEndHandler = mockPi._handlers!['turn_end'] as TurnEndHandler;
 
       await inputHandler({ text: longMessage, source: "user" }, ctx);
-      await turnEndHandler({ turnIndex: 0, message: {}, toolResults: [] }, ctx);
 
       const firstMessageMatch = capturedPrompt.match(/First message: ([\s\S]+?)(?:\n|$)/);
       expect(firstMessageMatch).toBeTruthy();
@@ -523,6 +598,44 @@ describe("sessionTitleExtension", () => {
       }
 
       delete process.env.PI_TITLE_MAX_INPUT;
+    });
+  });
+
+  describe("Session reset", () => {
+    it("should reset state on session_start", async () => {
+      const fsMock = fs as unknown as {
+        promises: {
+          access: ReturnType<typeof vi.fn>;
+          readFile: ReturnType<typeof vi.fn>;
+        };
+      };
+      fsMock.promises.access.mockRejectedValue(new Error("File not found"));
+
+      const { complete } = await import("@mariozechner/pi-ai");
+      vi.mocked(complete).mockResolvedValue({
+        content: [{ type: "text", text: "Test Title" }],
+      } as unknown as Awaited<ReturnType<typeof complete>>);
+
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!['input'] as InputHandler;
+      const sessionStartHandler = mockPi._handlers!['session_start'] as SessionStartHandler;
+
+      // First session: generate a title
+      await inputHandler({ text: "First session message", source: "user" }, ctx);
+      expect(mockPi.setSessionName).toHaveBeenCalledWith("Test Title");
+
+      // Simulate session end and new session start
+      await sessionStartHandler({ type: "session_start", reason: "new" }, ctx);
+      
+      vi.mocked(complete).mockClear();
+      vi.mocked(mockPi.setSessionName).mockClear();
+
+      // Second session: should generate a new title
+      await inputHandler({ text: "Second session message", source: "user" }, ctx);
+      expect(complete).toHaveBeenCalled();
     });
   });
 });
