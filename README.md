@@ -23,7 +23,6 @@ For the first prompt-like input in a session it will:
 2. Skip work when the session already has a name
 3. Load a prompt template if present
 4. Use the current session model to generate a title from the first prompt
-4. Use the current session model to generate a title from the first prompt
 5. Call `pi.setSessionName(title)` (returns void)
 
 In oh-my-pi interactive mode, this timing matters: `input` handlers run before the built-in first-message auto-title check, so setting the name there prevents omp from generating a competing default title.
@@ -80,8 +79,8 @@ Respond with ONLY the title.
 ## Compatibility
 
 This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable, the extension cleanly skips title generation instead of crashing.
-## Development
 
+## Development
 ```bash
 npm install
 npm run typecheck

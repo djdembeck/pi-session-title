@@ -660,6 +660,47 @@ describe("sessionTitleExtension", () => {
       await inputHandler({ text: "Second session message", source: "user" }, ctx);
       expect(mockPi.pi.complete).toHaveBeenCalled();
     });
+
+    it("should not apply stale title when in-flight generation resolves after session reset", async () => {
+      const fsMock = fs as unknown as {
+        promises: {
+          access: ReturnType<typeof vi.fn>;
+          readFile: ReturnType<typeof vi.fn>;
+        };
+      };
+      fsMock.promises.access.mockRejectedValue(new Error("File not found"));
+
+      // Create a deferred promise we can resolve later
+      let resolveComplete: (value: unknown) => void;
+      const completePromise = new Promise((resolve) => {
+        resolveComplete = resolve;
+      });
+      vi.mocked(mockPi.pi.complete).mockReturnValue(completePromise as Promise<unknown>);
+
+      const ctx = createMockContext();
+
+      sessionTitleExtension(mockPi as ExtensionAPI);
+
+      const inputHandler = mockPi._handlers!["input"] as InputHandler;
+      const sessionStartHandler = mockPi._handlers!["session_start"] as SessionStartHandler;
+
+      // Trigger title generation but don't await it
+      const inputPromise = inputHandler({ text: "First session", source: "user" }, ctx);
+
+      // Immediately trigger session reset before completion resolves
+      await sessionStartHandler({ type: "session_start", reason: "new" }, ctx);
+
+      // Now resolve the in-flight completion
+      resolveComplete!({
+        content: [{ type: "text", text: "Stale Title" }],
+      });
+
+      // Await the original input handler promise
+      await inputPromise;
+
+      // setSessionName should NOT have been called with the stale title
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
+    });
   });
 
   describe("Non-interactive fallback", () => {
