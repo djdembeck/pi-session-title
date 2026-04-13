@@ -265,7 +265,13 @@ async function generateTitle(options: {
 
     return "";
   } catch (error) {
-    if (error instanceof Error && error.message?.includes("Cannot find package")) {
+    if (
+      error instanceof Error && (
+        error.message?.includes("Cannot find package") ||
+        (error as any).code === "ERR_MODULE_NOT_FOUND" ||
+        (error as any).code === "MODULE_NOT_FOUND"
+      )
+    ) {
       // @oh-my-pi/pi-ai not installed — skip gracefully without noise
       return "";
     }

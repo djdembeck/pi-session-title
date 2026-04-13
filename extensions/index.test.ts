@@ -727,6 +727,15 @@ describe("sessionTitleExtension", () => {
       await inputPromise;
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
+
+      // Verify that after stale generation resolves, a new generation can set a title
+      mockPi.pi.complete.mockResolvedValueOnce({
+        content: [{ type: "text", text: "Fresh Title" }],
+      } as unknown as Awaited<ReturnType<typeof mockPi.pi.complete>>);
+
+      await inputHandler({ text: "New session message", source: "user" }, ctx);
+
+      expect(mockPi.setSessionName).toHaveBeenCalledWith("Fresh Title", "auto");
     });
   });
 

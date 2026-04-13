@@ -29,7 +29,33 @@ declare module "@oh-my-pi/pi-ai" {
     | "github-copilot"
     | "cursor"
     | "gitlab-duo"
-    | "synthetic";
+    | "synthetic"
+    | "xai"
+    | "groq"
+    | "cerebras"
+    | "openrouter"
+    | "kilo"
+    | "vercel-ai-gateway"
+    | "zai"
+    | "mistral"
+    | "minimax"
+    | "opencode-go"
+    | "opencode-zen"
+    | "cloudflare-ai-gateway"
+    | "huggingface"
+    | "litellm"
+    | "moonshot"
+    | "nvidia"
+    | "nanogpt"
+    | "ollama"
+    | "qianfan"
+    | "qwen-portal"
+    | "together"
+    | "venice"
+    | "vllm"
+    | "xiaomi"
+    | "zenmux"
+    | "lm-studio";
 
   export type Provider = KnownProvider | (string & {});
 
@@ -152,6 +178,14 @@ declare module "@oh-my-pi/pi-ai" {
 
   export interface SimpleStreamOptions extends StreamOptions {
     reasoning?: Effort;
+    thinkingBudgets?: Record<Effort, number>;
+    cursorExecHandlers?: CursorExecHandlers;
+    cursorOnToolResult?: (result: unknown) => void;
+    toolChoice?: ToolChoice;
+    serviceTier?: ServiceTier;
+    kimiApiFormat?: "kimi" | "openai";
+    syntheticApiFormat?: "openai" | "anthropic";
+    preferWebsockets?: boolean;
   }
 
   export interface Usage {
@@ -219,4 +253,20 @@ declare module "@oh-my-pi/pi-ai" {
   export interface AnthropicOptions extends StreamOptions {
     cacheRetention?: unknown;
   }
+
+  export type CursorExecHandlers = {
+    executeBash?: (command: string) => Promise<{ output: string; exitCode: number }>;
+    readFile?: (path: string) => Promise<string>;
+    writeFile?: (path: string, content: string) => Promise<void>;
+  };
+
+  export type ToolChoice =
+    | "auto"
+    | "required"
+    | { type: "function"; function: { name: string } };
+
+  export type ServiceTier =
+    | "auto"
+    | "default"
+    | "flex";
 }
