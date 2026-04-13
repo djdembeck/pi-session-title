@@ -1,6 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { complete } from "@mariozechner/pi-ai";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { complete as completeFn, Model } from "@oh-my-pi/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -27,6 +26,8 @@ interface TitleConfig {
   maxOutputTokens?: number;
   enabled?: boolean;
 }
+
+type CompletionModel = NonNullable<ExtensionContext["model"]>;
 
 type SessionNameCapableApi = ExtensionAPI & {
   getSessionName?: () => string | undefined;
@@ -161,7 +162,7 @@ async function loadTemplate(templatePath: string): Promise<string> {
 }
 
 async function generateTitle(options: {
-  model: Model<Api>;
+  model: CompletionModel;
   apiKey: string;
   headers?: Record<string, string>;
   template: string;
@@ -175,69 +176,125 @@ async function generateTitle(options: {
 }): Promise<string> {
   const { model, apiKey, headers, template, context, maxTokens, signal } = options;
   const prompt = renderTemplate(template, context);
-  const response = await complete(
-    model,
-    {
-      messages: [{
-        role: "user",
-        content: [{ type: "text", text: prompt }],
-        timestamp: Date.now(),
-      }],
-    },
-    {
-      apiKey,
-      headers,
-      maxTokens,
-      signal,
-    },
-  );
 
-  return response.content
-    .filter((content): content is { type: "text"; text: string } => content.type === "text")
-    .map(content => content.text)
-    .join("");
+  try {
+    const piAi = await import("@oh-my-pi/pi-ai");
+    const complete = piAi.complete as typeof completeFn;
+
+    if (typeof complete !== "function") {
+      console.error("complete is not a function from @oh-my-pi/pi-ai");
+      return "";
+    }
+
+    const response = await complete(
+      model as Model,
+      {
+        messages: [{
+          role: "user",
+          content: [{ type: "text", text: prompt }],
+          timestamp: Date.now(),
+        }],
+      },
+      {
+        apiKey,
+        headers,
+        maxTokens,
+        signal,
+      },
+    );
+
+    const textContent = response.content.find(
+      (c: { type: string }) => c.type === "text",
+    ) as { type: "text"; text: string } | undefined;
+    if (textContent) {
+      return textContent.text;
+    }
+
+    const thinkingContent = response.content.find(
+      (c: { type: string }) => c.type === "thinking",
+    ) as { type: "thinking"; thinking: string } | undefined;
+    if (thinkingContent) {
+      const lines = thinkingContent.thinking
+        .split("\n")
+        .map((l: string) => l.trim())
+        .filter((l: string) => {
+          if (!l) return false;
+          // Filter out common non-title reasoning patterns (case-insensitive)
+          const lower = l.toLowerCase();
+          if (lower.startsWith("we are") || lower.startsWith("according to")) return false;
+          if (lower.startsWith("let me") || lower.startsWith("i need to")) return false;
+          if (lower.startsWith("the user wants") || lower.startsWith("the user asked")) return false;
+          if (lower.startsWith("processing") || lower.startsWith("analyzing")) return false;
+          if (lower.startsWith("i'll") || lower.startsWith("i will")) return false;
+          return true;
+        });
+      if (lines.length > 0) {
+        return lines[0].slice(0, 72);
+      }
+    }
+
+    return "";
+  } catch (error) {
+    console.error("Error calling complete:", error);
+    return "";
+  }
 }
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
   let titleSettled = false;
   let firstMessage: string | null = null;
+  let sawInteractiveInput = false;
+  let generateTitlePromise: Promise<void> | null = null;
   const config = createConfigFromEnv();
   const sessionNameApi = createSessionNameApi(pi);
 
-  pi.on("input", async (event, ctx) => {
-    if (titleSettled || event.source === "extension") {
-      return { action: "continue" };
+
+  const maybeGenerateTitle = async (message: string, ctx: ExtensionContext): Promise<void> => {
+    if (titleSettled) {
+      return;
     }
+
+    // Prevent concurrent generateTitle calls with a promise-based mutex
+    if (generateTitlePromise) {
+      await generateTitlePromise;
+      return;
+    }
+
 
     const existingName = sessionNameApi.get();
     if (existingName) {
       titleSettled = true;
-      return { action: "continue" };
+      return;
     }
 
     if (config.enabled === false || !sessionNameApi.available) {
       titleSettled = true;
-      return { action: "continue" };
+      return;
     }
 
-    if (!isPromptTitleCandidate(event.text)) {
-      return { action: "continue" };
+    if (!isPromptTitleCandidate(message)) {
+      return;
     }
 
     if (!firstMessage) {
-      firstMessage = event.text.trim();
+      firstMessage = message.trim();
     }
 
     const model = ctx.model;
     if (!model) {
-      return { action: "continue" };
+      return;
     }
 
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok || !auth.apiKey) {
-      return { action: "continue" };
+    const sessionId = ctx.sessionManager.getSessionId();
+    const authRegistry = ctx.modelRegistry as ExtensionContext["modelRegistry"] & {
+      getApiKey?: (model: CompletionModel, sessionId?: string) => Promise<string | undefined>;
+    };
+    const apiKey = typeof authRegistry.getApiKey === "function"
+      ? await authRegistry.getApiKey(model, sessionId)
+      : undefined;
+    if (!apiKey) {
+      return;
     }
-
     try {
       const cwd = ctx.cwd;
       const templatePath = await resolveTemplatePath(cwd, config.templatePath);
@@ -251,42 +308,69 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
         }
       }
 
-      const title = await generateTitle({
-        model,
-        apiKey: auth.apiKey,
-        headers: auth.headers,
-        template,
-        context: {
-          firstMessage: firstMessage.slice(
-            0,
-            validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT),
-          ),
-          cwd,
-          timestamp: new Date().toISOString(),
-        },
-        maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
-        signal: ctx.signal,
-      });
+      // Wrap in promise so we can track it for mutex
+      generateTitlePromise = (async () => {
+        try {
+          const title = await generateTitle({
+            model,
+            apiKey,
+            headers: model.headers,
+            template,
+            context: {
+              firstMessage: firstMessage!.slice(
+                0,
+                validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT),
+              ),
+              cwd,
+              timestamp: new Date().toISOString(),
+            },
+            maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
+            signal: ctx.signal,
+          });
 
-      const sanitizedTitle = sanitizeTitle(title);
-      if (!sanitizedTitle) {
-        titleSettled = true;
-        return { action: "continue" };
-      }
+          const sanitizedTitle = sanitizeTitle(title);
+          if (!sanitizedTitle) {
+            titleSettled = true;
+            return;
+          }
 
-      if (!sessionNameApi.get()) {
-        await sessionNameApi.set(sanitizedTitle);
-      }
-      titleSettled = true;
+          if (!sessionNameApi.get()) {
+            await sessionNameApi.set(sanitizedTitle);
+          }
+          titleSettled = true;
+        } finally {
+          generateTitlePromise = null;
+        }
+      })();
+
+      await generateTitlePromise;
     } catch (error) {
       console.error("Error in sessionTitleExtension:", error);
+      // Do NOT set titleSettled = true here — allow retries on transient errors
+    }
+  };
+
+  pi.on("input", async (event, ctx) => {
+    if (event.source === "extension") {
+      return { action: "continue" };
+    }
+    sawInteractiveInput = true;
+
+    await maybeGenerateTitle(event.text, ctx);
+    return { action: "continue" };
+  });
+
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (sawInteractiveInput) {
+      return;
     }
 
-    return { action: "continue" };
+    await maybeGenerateTitle(event.prompt, ctx);
   });
 
   pi.on("session_start", async () => {
     titleSettled = false;
     firstMessage = null;
+    sawInteractiveInput = false;
   });
 }

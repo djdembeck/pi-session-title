@@ -13,9 +13,9 @@ npm install
 npm run build
 ```
 
-## Behavior
-
-The extension runs from the `input` event.
+The extension registers two event handlers:
+- `input` — fires in interactive sessions for user-originated input
+- `before_agent_start` — fires for all prompts before the agent loop. The extension only uses it as a fallback when `input` never fires (e.g., non-interactive/print mode).
 
 For the first prompt-like input in a session it will:
 
@@ -23,9 +23,10 @@ For the first prompt-like input in a session it will:
 2. Skip work when the session already has a name
 3. Load a prompt template if present
 4. Use the current session model to generate a title from the first prompt
-5. Call `await pi.setSessionName(title)`
+4. Use the current session model to generate a title from the first prompt
+5. Call `pi.setSessionName(title)` (returns void)
 
-In oh-my-pi, this timing matters: `input` handlers run before the built-in first-message auto-title check, so setting the name here prevents omp from generating a competing default title.
+In oh-my-pi interactive mode, this timing matters: `input` handlers run before the built-in first-message auto-title check, so setting the name there prevents omp from generating a competing default title.
 
 ## Configuration
 
@@ -78,8 +79,7 @@ Respond with ONLY the title.
 
 ## Compatibility
 
-This package is typed against `@mariozechner/pi-coding-agent` and works with hosts that expose `getSessionName()` and `setSessionName()` on the extension API.
-
+This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable, the extension cleanly skips title generation instead of crashing.
 ## Development
 
 ```bash
