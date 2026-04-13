@@ -88,8 +88,7 @@ Respond with ONLY the title.
 
 ## Compatibility
 
-This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable (e.g., not installed as an optional peer dependency), the extension silently skips title generation instead of crashing — no error is logged for expected missing-package scenarios.
-
+This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. For title generation via the model, the function attempts to load `@oh-my-pi/pi-ai` first and falls back to `@mariozechner/pi-ai` if that import is unavailable. Title generation is only skipped (without error) when neither module is resolvable.
 The extension resolves API keys and request headers through both `getApiKeyAndHeaders` (pi-mono) and `getApiKey` (oh-my-pi) on the model registry, so it works across both runtime variants.
 
 ## Development

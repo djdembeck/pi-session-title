@@ -1002,7 +1002,7 @@ describe("sessionTitleExtension", () => {
   });
 
   describe("Optional peer dependency fallback", () => {
-    it("should not crash when @oh-my-pi/pi-ai dynamic import fails", async () => {
+    it("should not crash when @oh-my-pi/pi-ai complete throws module-not-found", async () => {
       const fsMock = fs as unknown as {
         promises: {
           access: any;
@@ -1012,8 +1012,10 @@ describe("sessionTitleExtension", () => {
       fsMock.promises.access.mockRejectedValue(new Error("File not found"));
 
       const { complete } = await import("@oh-my-pi/pi-ai");
+      const moduleNotFoundError = new Error("Cannot find package @oh-my-pi/pi-ai");
+      (moduleNotFoundError as any).code = "ERR_MODULE_NOT_FOUND";
       vi.mocked(complete).mockImplementation(() => {
-        throw new Error("Cannot find package @oh-my-pi/pi-ai");
+        throw moduleNotFoundError;
       });
 
       const ctx = createMockContext();
@@ -1025,6 +1027,7 @@ describe("sessionTitleExtension", () => {
 
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
     });
+
     it("should not crash when getApiKeyAndHeaders throws", async () => {
       const fsMock = fs as unknown as {
         promises: {

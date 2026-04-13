@@ -15,7 +15,7 @@
   "exports": {
     ".": {
       "import": "./extensions/index.ts",
-      "types": "./extensions/index.ts"
+      "types": "./extensions/types/pi-ai.d.ts"
     }
   },
   "homepage": "https://github.com/djdembeck/pi-session-title#readme",
@@ -26,6 +26,7 @@
   "files": [
     "extensions/**/*.ts",
     "!extensions/**/*.test.ts",
+    "extensions/**/*.d.ts",
     "README.md",
     "LICENSE"
   ],
