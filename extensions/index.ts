@@ -31,13 +31,18 @@ type CompletionModel = NonNullable<ExtensionContext["model"]>;
 
 type SessionNameCapableApi = ExtensionAPI & {
   getSessionName?: () => string | undefined;
-  setSessionName?: (name: string) => void | Promise<void>;
+  setSessionName?: (name: string, source?: "auto" | "user") => void | Promise<void>;
 };
 
 interface SessionNameApi {
   available: boolean;
   get: () => string | undefined;
-  set: (name: string) => Promise<void>;
+  set: (name: string, source?: "auto" | "user") => Promise<void>;
+}
+
+interface ResolvedAuth {
+  apiKey: string;
+  headers?: Record<string, string>;
 }
 
 const PROJECT_TEMPLATE_PATHS = [
@@ -51,20 +56,21 @@ const GLOBAL_TEMPLATE_PATHS = [
 ];
 
 function validatePositiveInteger(value: unknown, defaultValue: number): number {
-  return Number.isFinite(value) && Number.isInteger(value) && (value as number) > 0
-    ? value as number
-    : defaultValue;
+  const num = Number(value);
+  return Number.isFinite(num) && Number.isInteger(num) && num > 0 ? num : defaultValue;
 }
 
 function createConfigFromEnv(): TitleConfig {
   return {
     templatePath: process.env.PI_TITLE_TEMPLATE,
-    maxInputLength: process.env.PI_TITLE_MAX_INPUT
-      ? parseInt(process.env.PI_TITLE_MAX_INPUT, 10)
-      : DEFAULT_MAX_INPUT,
-    maxOutputTokens: process.env.PI_TITLE_MAX_TOKENS
-      ? parseInt(process.env.PI_TITLE_MAX_TOKENS, 10)
-      : DEFAULT_MAX_TOKENS,
+    maxInputLength: validatePositiveInteger(
+      process.env.PI_TITLE_MAX_INPUT ? parseInt(process.env.PI_TITLE_MAX_INPUT, 10) : DEFAULT_MAX_INPUT,
+      DEFAULT_MAX_INPUT,
+    ),
+    maxOutputTokens: validatePositiveInteger(
+      process.env.PI_TITLE_MAX_TOKENS ? parseInt(process.env.PI_TITLE_MAX_TOKENS, 10) : DEFAULT_MAX_TOKENS,
+      DEFAULT_MAX_TOKENS,
+    ),
     enabled: process.env.PI_TITLE_ENABLED !== "false",
   };
 }
@@ -81,11 +87,11 @@ function createSessionNameApi(pi: ExtensionAPI): SessionNameApi {
   return {
     available: getSessionName !== undefined && setSessionName !== undefined,
     get: () => getSessionName?.() ?? undefined,
-    set: async (name: string) => {
+    set: async (name: string, source: "auto" | "user" = "auto") => {
       if (!setSessionName) {
         return;
       }
-      await setSessionName(name);
+      await setSessionName(name, source);
     },
   };
 }
@@ -161,6 +167,42 @@ async function loadTemplate(templatePath: string): Promise<string> {
   return fs.promises.readFile(templatePath, "utf-8");
 }
 
+/**
+ * Resolve API key and headers for a model, supporting both pi-mono and oh-my-pi runtimes.
+ * - pi-mono: getApiKeyAndHeaders(model) → { ok, apiKey?, headers? }
+ * - oh-my-pi: getApiKey(model, sessionId?) → string | undefined
+ */
+async function resolveModelAuth(
+  modelRegistry: ExtensionContext["modelRegistry"],
+  model: CompletionModel,
+  sessionId?: string,
+): Promise<ResolvedAuth | undefined> {
+  const registry = modelRegistry as ExtensionContext["modelRegistry"] & {
+    getApiKeyAndHeaders?: (model: CompletionModel) => Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }>;
+    getApiKey?: (model: CompletionModel, sessionId?: string) => Promise<string | undefined>;
+  };
+
+  // Prefer getApiKeyAndHeaders (pi-mono) which includes dynamic auth headers
+  if (typeof registry.getApiKeyAndHeaders === "function") {
+    const result = await registry.getApiKeyAndHeaders(model);
+    if (result.ok && result.apiKey) {
+      return { apiKey: result.apiKey, headers: { ...model.headers, ...result.headers } };
+    }
+    return undefined;
+  }
+
+  // Fall back to getApiKey (oh-my-pi)
+  if (typeof registry.getApiKey === "function") {
+    const apiKey = await registry.getApiKey(model, sessionId);
+    if (apiKey) {
+      return { apiKey, headers: model.headers };
+    }
+    return undefined;
+  }
+
+  return undefined;
+}
+
 async function generateTitle(options: {
   model: CompletionModel;
   apiKey: string;
@@ -210,34 +252,56 @@ async function generateTitle(options: {
       return textContent.text;
     }
 
+    // Fallback: extract title from thinking content when model only returns reasoning
     const thinkingContent = response.content.find(
       (c: { type: string }) => c.type === "thinking",
     ) as { type: "thinking"; thinking: string } | undefined;
     if (thinkingContent) {
-      const lines = thinkingContent.thinking
-        .split("\n")
-        .map((l: string) => l.trim())
-        .filter((l: string) => {
-          if (!l) return false;
-          // Filter out common non-title reasoning patterns (case-insensitive)
-          const lower = l.toLowerCase();
-          if (lower.startsWith("we are") || lower.startsWith("according to")) return false;
-          if (lower.startsWith("let me") || lower.startsWith("i need to")) return false;
-          if (lower.startsWith("the user wants") || lower.startsWith("the user asked")) return false;
-          if (lower.startsWith("processing") || lower.startsWith("analyzing")) return false;
-          if (lower.startsWith("i'll") || lower.startsWith("i will")) return false;
-          return true;
-        });
-      if (lines.length > 0) {
-        return lines[0].slice(0, 72);
+      const titleLine = extractTitleFromThinking(thinkingContent.thinking);
+      if (titleLine) {
+        return titleLine;
       }
     }
 
     return "";
   } catch (error) {
+    if (error instanceof Error && error.message?.includes("Cannot find package")) {
+      // @oh-my-pi/pi-ai not installed — skip gracefully without noise
+      return "";
+    }
     console.error("Error calling complete:", error);
     return "";
   }
+}
+
+/**
+ * Extract a plausible title from thinking/reasoning content by filtering
+ * out common reasoning patterns and returning the first substantive line.
+ */
+function extractTitleFromThinking(thinking: string): string | null {
+  // Lines that are clearly meta-reasoning, not title candidates
+  const metaPrefixes = [
+    "we are", "according to", "let me", "i need to",
+    "the user wants", "the user asked", "the user is",
+    "processing", "analyzing", "i'll", "i will", "i should",
+    "i'm going to", "i can", "i need", "i want",
+    "looking at", "based on", "first,", "so,",
+    "this is", "this seems", "it looks",
+  ];
+
+  const lines = thinking
+    .split("\n")
+    .map(l => l.trim())
+    .filter(l => {
+      if (!l) return false;
+      const lower = l.toLowerCase();
+      return !metaPrefixes.some(prefix => lower.startsWith(prefix));
+    });
+
+  if (lines.length > 0) {
+    return lines[0];
+  }
+  return null;
 }
 
 export default function sessionTitleExtension(pi: ExtensionAPI) {
@@ -245,21 +309,21 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
   let firstMessage: string | null = null;
   let sawInteractiveInput = false;
   let generateTitlePromise: Promise<void> | null = null;
+  let sessionGenerationId = 0;
   const config = createConfigFromEnv();
   const sessionNameApi = createSessionNameApi(pi);
-
 
   const maybeGenerateTitle = async (message: string, ctx: ExtensionContext): Promise<void> => {
     if (titleSettled) {
       return;
     }
 
-    // Prevent concurrent generateTitle calls with a promise-based mutex
+    // Prevent concurrent generateTitle calls with a promise-based mutex.
+    // Set the promise eagerly (before async pre-work) to close the mutex gap.
     if (generateTitlePromise) {
       await generateTitlePromise;
       return;
     }
-
 
     const existingName = sessionNameApi.get();
     if (existingName) {
@@ -284,65 +348,71 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
     if (!model) {
       return;
     }
+    const capturedGenerationId = sessionGenerationId;
 
-    const sessionId = ctx.sessionManager.getSessionId();
-    const authRegistry = ctx.modelRegistry as ExtensionContext["modelRegistry"] & {
-      getApiKey?: (model: CompletionModel, sessionId?: string) => Promise<string | undefined>;
-    };
-    const apiKey = typeof authRegistry.getApiKey === "function"
-      ? await authRegistry.getApiKey(model, sessionId)
-      : undefined;
-    if (!apiKey) {
-      return;
-    }
-    try {
-      const cwd = ctx.cwd;
-      const templatePath = await resolveTemplatePath(cwd, config.templatePath);
-      let template = DEFAULT_TITLE_PROMPT;
-
-      if (templatePath) {
-        try {
-          template = await loadTemplate(templatePath);
-        } catch (error) {
-          console.error(`Failed to load template from ${templatePath}, using default:`, error);
+    generateTitlePromise = (async () => {
+      try {
+        const sessionId = ctx.sessionManager?.getSessionId();
+        const auth = await resolveModelAuth(ctx.modelRegistry, model, sessionId);
+        if (!auth?.apiKey) {
+          return;
         }
-      }
 
-      // Wrap in promise so we can track it for mutex
-      generateTitlePromise = (async () => {
-        try {
-          const title = await generateTitle({
-            model,
-            apiKey,
-            headers: model.headers,
-            template,
-            context: {
-              firstMessage: firstMessage!.slice(
-                0,
-                validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT),
-              ),
-              cwd,
-              timestamp: new Date().toISOString(),
-            },
-            maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
-            signal: ctx.signal,
-          });
+        const cwd = ctx.cwd;
+        let template = DEFAULT_TITLE_PROMPT;
 
-          const sanitizedTitle = sanitizeTitle(title);
-          if (!sanitizedTitle) {
-            titleSettled = true;
-            return;
+        const templatePath = await resolveTemplatePath(cwd, config.templatePath);
+        if (templatePath) {
+          try {
+            template = await loadTemplate(templatePath);
+          } catch (error) {
+            console.error(`Failed to load template from ${templatePath}, using default:`, error);
           }
+        }
 
-          if (!sessionNameApi.get()) {
-            await sessionNameApi.set(sanitizedTitle);
-          }
+        if (sessionGenerationId !== capturedGenerationId) {
+          return;
+        }
+
+        const title = await generateTitle({
+          model,
+          apiKey: auth.apiKey,
+          headers: auth.headers,
+          template,
+          context: {
+            firstMessage: firstMessage!.slice(
+              0,
+              validatePositiveInteger(config.maxInputLength, DEFAULT_MAX_INPUT),
+            ),
+            cwd,
+            timestamp: new Date().toISOString(),
+          },
+          maxTokens: validatePositiveInteger(config.maxOutputTokens, DEFAULT_MAX_TOKENS),
+          signal: ctx.signal,
+        });
+
+        if (sessionGenerationId !== capturedGenerationId) {
+          return;
+        }
+
+        const sanitizedTitle = sanitizeTitle(title);
+        if (!sanitizedTitle) {
           titleSettled = true;
-        } finally {
+          return;
+        }
+
+        if (!sessionNameApi.get()) {
+          await sessionNameApi.set(sanitizedTitle, "auto");
+        }
+        titleSettled = true;
+      } finally {
+        if (sessionGenerationId === capturedGenerationId) {
           generateTitlePromise = null;
         }
-      })();
+      }
+    })();
 
+    try {
       await generateTitlePromise;
     } catch (error) {
       console.error("Error in sessionTitleExtension:", error);
@@ -352,12 +422,11 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
 
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") {
-      return { action: "continue" };
+      return;
     }
     sawInteractiveInput = true;
 
     await maybeGenerateTitle(event.text, ctx);
-    return { action: "continue" };
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -369,8 +438,10 @@ export default function sessionTitleExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async () => {
+    sessionGenerationId++;
     titleSettled = false;
     firstMessage = null;
     sawInteractiveInput = false;
+    generateTitlePromise = null;
   });
 }

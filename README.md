@@ -4,7 +4,15 @@ Session-title extension for pi-compatible runtimes, including oh-my-pi.
 
 It generates a concise session title from the first real prompt and persists it through the host extension API.
 
-## Manual installation
+## Installation
+
+### npm (recommended)
+
+```bash
+npm install pi-session-title
+```
+
+### Manual
 
 ```bash
 git clone https://github.com/djdembeck/pi-session-title.git ~/.omp/agent/extensions/pi-session-title
@@ -12,6 +20,8 @@ cd ~/.omp/agent/extensions/pi-session-title
 npm install
 npm run build
 ```
+
+## How it works
 
 The extension registers two event handlers:
 - `input` — fires in interactive sessions for user-originated input
@@ -23,7 +33,7 @@ For the first prompt-like input in a session it will:
 2. Skip work when the session already has a name
 3. Load a prompt template if present
 4. Use the current session model to generate a title from the first prompt
-5. Call `pi.setSessionName(title)` (returns void)
+5. Call `setSessionName(title, "auto")` — auto-generated titles yield to user-renames (`/rename`)
 
 In oh-my-pi interactive mode, this timing matters: `input` handlers run before the built-in first-message auto-title check, so setting the name there prevents omp from generating a competing default title.
 
@@ -78,11 +88,19 @@ Respond with ONLY the title.
 
 ## Compatibility
 
-This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable, the extension cleanly skips title generation instead of crashing.
+This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable (e.g., not installed as an optional peer dependency), the extension silently skips title generation instead of crashing — no error is logged for expected missing-package scenarios.
+
+The extension resolves API keys and request headers through both `getApiKeyAndHeaders` (pi-mono) and `getApiKey` (oh-my-pi) on the model registry, so it works across both runtime variants.
 
 ## Development
+
 ```bash
 npm install
 npm run typecheck
+npm run build
 npm test
 ```
+
+## License
+
+MIT
