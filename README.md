@@ -1,135 +1,105 @@
 # pi-session-title
 
-Sophisticated session title generation extension for [pi](https://github.com/marioechr/pi) with templates and dedicated model support.
+Session-title extension for pi-compatible runtimes, including oh-my-pi.
 
-**Why?** Session titles should be meaningful and contextual. This extension generates concise, relevant titles from the first user message using customizable templates and dedicated models.
+It generates a concise session title from the first real prompt and persists it through the host extension API.
 
 ## Installation
 
+### npm (recommended)
+
 ```bash
-pi install pi-session-title
+npm install pi-session-title
 ```
 
-<details>
-<summary>Manual installation</summary>
+### Manual
 
 ```bash
-git clone https://github.com/djdembeck/pi-session-title.git ~/.pi/agent/extensions/pi-session-title
-cd ~/.pi/agent/extensions/pi-session-title
+git clone https://github.com/djdembeck/pi-session-title.git ~/.omp/agent/extensions/pi-session-title
+cd ~/.omp/agent/extensions/pi-session-title
 npm install
 npm run build
 ```
 
-</details>
+## How it works
 
-## How It Works
+The extension registers two event handlers:
+- `input` — fires in interactive sessions for user-originated input
+- `before_agent_start` — fires for all prompts before the agent loop. The extension only uses it as a fallback when `input` never fires (e.g., non-interactive/print mode).
 
-The extension hooks into the `session_before_auto_name` event. When a new session starts:
+For the first prompt-like input in a session it will:
 
-1. Loads custom template from `.pi/prompts/title.md` or uses built-in default
-2. Resolves model (configured `modelId` or current session model)
-3. Generates a concise title from the first user message
-4. Sanitizes and returns the title to pi core
+1. Skip extension-originated input and command-style input (`/`, `!`, `$`)
+2. Skip work when the session already has a name
+3. Load a prompt template if present
+4. Use the current session model to generate a title from the first prompt
+5. Call `setSessionName(title, "auto")` — auto-generated titles yield to user-renames (`/rename`)
 
-**Supported variables in templates:**
-- `{{firstMessage}}` — First user message (truncated to `maxInputLength`)
-- `{{cwd}}` — Current working directory
-- `{{timestamp}}` — ISO timestamp
+In oh-my-pi interactive mode, this timing matters: `input` handlers run before the built-in first-message auto-title check, so setting the name there prevents omp from generating a competing default title.
 
 ## Configuration
 
-Add to your pi settings:
+The extension is configured with environment variables.
 
-```json
-{
-  "extensions": {
-    "session-title": {
-      "enabled": true,
-      "modelId": "claude-3-haiku",
-      "templatePath": null,
-      "maxInputLength": 2000,
-      "maxOutputTokens": 30
-    }
-  }
-}
+| Variable | Default | Description |
+|---|---|---|
+| `PI_TITLE_ENABLED` | `true` | Enable or disable title generation |
+| `PI_TITLE_TEMPLATE` | unset | Custom template path, relative to cwd or absolute |
+| `PI_TITLE_MAX_INPUT` | `2000` | Maximum characters from the first prompt sent to the model |
+| `PI_TITLE_MAX_TOKENS` | `30` | Maximum tokens requested for the generated title |
+
+Example:
+
+```bash
+export PI_TITLE_ENABLED=true
+export PI_TITLE_MAX_INPUT=1000
+export PI_TITLE_MAX_TOKENS=20
 ```
 
-### Settings
+## Template variables
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `enabled` | boolean | `true` | Enable/disable title generation |
-| `modelId` | string | — | Specific model ID for title generation (uses current model if not set) |
-| `templatePath` | string | — | Custom template path (relative or absolute) |
-| `maxInputLength` | number | `2000` | Max chars from first message |
-| `maxOutputTokens` | number | `30` | Max tokens in generated title |
+Available template variables:
 
-## Template Discovery
+- `{{firstMessage}}`
+- `{{cwd}}`
+- `{{timestamp}}`
 
-The extension looks for templates in this order:
+## Template discovery
 
-1. Custom `templatePath` from config
-2. `.pi/prompts/title.md` (project)
-3. `.omp/prompts/title.md` (project, oh-my-pi compatibility)
-4. `~/.pi/agent/prompts/title.md` (global)
-5. `~/.omp/agent/prompts/title.md` (global, oh-my-pi compatibility)
-6. Built-in default prompt
+Templates are resolved in this order:
 
-### Example Template
+1. `PI_TITLE_TEMPLATE`
+2. `.pi/prompts/title.md`
+3. `.omp/prompts/title.md`
+4. `~/.pi/agent/prompts/title.md`
+5. `~/.omp/agent/prompts/title.md`
+6. Built-in default template
 
-Create `.pi/prompts/title.md` in your project:
+Example project template:
 
-```markdown
+```md
 Generate a short title (max 6 words) for a coding session.
 
-User's request: {{firstMessage}}
+User request: {{firstMessage}}
 Project: {{cwd}}
 
 Respond with ONLY the title.
 ```
 
-## Commands
+## Compatibility
 
-### `/regenerate-title` — Regenerate session title
+This package is typed against `@mariozechner/pi-coding-agent`. At runtime it needs a host that exposes `getSessionName()` / `setSessionName()` on the extension API. It also requires `@oh-my-pi/pi-ai` to be resolvable at runtime for title generation via the model. If that module is unavailable (e.g., not installed as an optional peer dependency), the extension silently skips title generation instead of crashing — no error is logged for expected missing-package scenarios.
 
-Manually trigger title regeneration from the first user message:
-
-```bash
-/regenerate-title
-```
-
-## API
-
-The extension exports a default function compatible with pi's extension API:
-
-```typescript
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import sessionTitleExtension from "pi-session-title";
-
-// pi core loads and calls:
-sessionTitleExtension(ctx);
-```
-
-### Required Peer Dependencies
-
-- `@mariozechner/pi-coding-agent` — Type definitions for pi extension API
+The extension resolves API keys and request headers through both `getApiKeyAndHeaders` (pi-mono) and `getApiKey` (oh-my-pi) on the model registry, so it works across both runtime variants.
 
 ## Development
 
 ```bash
-# Build
+npm install
+npm run typecheck
 npm run build
-
-# Watch mode
-npm run dev
-
-# Clean
-npm run clean
+npm test
 ```
-
-## Related
-
-- [pi](https://github.com/marioechr/pi) — The agent this extension works with
 
 ## License
 

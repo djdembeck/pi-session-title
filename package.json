@@ -1,7 +1,7 @@
 {
   "name": "pi-session-title",
   "version": "1.0.0",
-  "description": "Sophisticated session title generation extension for pi with templates and dedicated model support",
+  "description": "Session-title extension for pi-compatible runtimes, including oh-my-pi",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -30,7 +30,17 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.66.1"
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@oh-my-pi/pi-ai": "*",
+    "@mariozechner/pi-ai": "*"
+  },
+  "peerDependenciesMeta": {
+    "@oh-my-pi/pi-ai": {
+      "optional": true
+    },
+    "@mariozechner/pi-ai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "^0.66.1",
@@ -43,7 +53,7 @@
     "dev": "tsc --watch",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
+    "build": "npm run clean && tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
