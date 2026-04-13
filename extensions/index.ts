@@ -171,7 +171,16 @@ async function loadTemplate(templatePath: string): Promise<string> {
  * Resolve API key and headers for a model, supporting both pi-mono and oh-my-pi runtimes.
  * - pi-mono: getApiKeyAndHeaders(model) → { ok, apiKey?, headers? }
  * - oh-my-pi: getApiKey(model, sessionId?) → string | undefined
+ *
+ * Note: oh-my-pi ModelRegistry.getApiKey returns "N/A" (kNoAuth) for keyless providers.
+ * We filter this out since "N/A" is not a valid API key for calling complete().
  */
+const K_NO_AUTH = "N/A";
+
+function isAuthenticated(apiKey: string | undefined | null): apiKey is string {
+  return Boolean(apiKey) && apiKey !== K_NO_AUTH;
+}
+
 async function resolveModelAuth(
   modelRegistry: ExtensionContext["modelRegistry"],
   model: CompletionModel,
@@ -185,7 +194,7 @@ async function resolveModelAuth(
   // Prefer getApiKeyAndHeaders (pi-mono) which includes dynamic auth headers
   if (typeof registry.getApiKeyAndHeaders === "function") {
     const result = await registry.getApiKeyAndHeaders(model);
-    if (result.ok && result.apiKey) {
+    if (result.ok && isAuthenticated(result.apiKey)) {
       return { apiKey: result.apiKey, headers: { ...model.headers, ...result.headers } };
     }
     return undefined;
@@ -194,7 +203,7 @@ async function resolveModelAuth(
   // Fall back to getApiKey (oh-my-pi)
   if (typeof registry.getApiKey === "function") {
     const apiKey = await registry.getApiKey(model, sessionId);
-    if (apiKey) {
+    if (isAuthenticated(apiKey)) {
       return { apiKey, headers: model.headers };
     }
     return undefined;
@@ -202,7 +211,6 @@ async function resolveModelAuth(
 
   return undefined;
 }
-
 async function generateTitle(options: {
   model: CompletionModel;
   apiKey: string;
@@ -220,11 +228,28 @@ async function generateTitle(options: {
   const prompt = renderTemplate(template, context);
 
   try {
-    const piAi = await import("@oh-my-pi/pi-ai");
+    // Try @oh-my-pi/pi-ai first (oh-my-pi binary), then fall back to @mariozechner/pi-ai (opencode)
+    let piAi: any;
+    try {
+      piAi = await import("@oh-my-pi/pi-ai");
+    } catch (error) {
+      // Only catch module-not-found errors; re-throw actual package errors
+      if (
+        error instanceof Error && (
+          error.message?.includes("Cannot find package") ||
+          (error as any).code === "ERR_MODULE_NOT_FOUND" ||
+          (error as any).code === "MODULE_NOT_FOUND"
+        )
+      ) {
+        piAi = await import("@mariozechner/pi-ai");
+      } else {
+        throw error;
+      }
+    }
     const complete = piAi.complete as typeof completeFn;
 
     if (typeof complete !== "function") {
-      console.error("complete is not a function from @oh-my-pi/pi-ai");
+      console.error("complete is not a function from pi-ai");
       return "";
     }
 
@@ -272,7 +297,7 @@ async function generateTitle(options: {
         (error as any).code === "MODULE_NOT_FOUND"
       )
     ) {
-      // @oh-my-pi/pi-ai not installed — skip gracefully without noise
+      // pi-ai not installed — skip gracefully without noise
       return "";
     }
     console.error("Error calling complete:", error);
