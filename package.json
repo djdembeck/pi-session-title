@@ -31,9 +31,9 @@
     "LICENSE"
   ],
   "peerDependencies": {
+    "@mariozechner/pi-ai": "^0.67.1",
     "@mariozechner/pi-coding-agent": "^0.66.1",
-    "@oh-my-pi/pi-ai": "^14.1.0",
-    "@mariozechner/pi-ai": "^0.67.1"
+    "@oh-my-pi/pi-ai": "^14.1.0"
   },
   "peerDependenciesMeta": {
     "@oh-my-pi/pi-ai": {
@@ -44,7 +44,9 @@
     }
   },
   "devDependencies": {
+    "@mariozechner/pi-ai": "^0.67.1",
     "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@oh-my-pi/pi-ai": "^14.1.0",
     "@types/node": "^20.0.0",
     "rimraf": "^5.0.0",
     "typescript": "^5.0.0",
