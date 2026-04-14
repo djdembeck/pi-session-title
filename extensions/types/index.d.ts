@@ -34,7 +34,6 @@ export type {
   ServiceTier,
 } from "@oh-my-pi/pi-ai";
 
-export { complete, completeSimple } from "@oh-my-pi/pi-ai";
 
 // Extension function type
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -46,3 +45,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 export type SessionTitleExtensionFn = (
   pi: ExtensionAPI
 ) => void | Promise<void>;
+
+declare const sessionTitleExtension: SessionTitleExtensionFn;
+export default sessionTitleExtension;
