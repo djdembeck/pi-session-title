@@ -51,11 +51,19 @@ steps:
   - id: create_commit
     description: Create git commit with conventional message
     command: |
-      if [ -n "${generate_commit_message.body}" ]; then
-        git commit --no-verify -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
+      export COMMIT_SUBJECT="${generate_commit_message.subject}"
+      export COMMIT_BODY="${generate_commit_message.body}"
+      if [ -n "$COMMIT_BODY" ]; then
+        printf '%s\n\n%s\n' "$COMMIT_SUBJECT" "$COMMIT_BODY" | git commit --no-verify -F -
       else
-        git commit --no-verify -m "${generate_commit_message.subject}"
+        printf '%s\n' "$COMMIT_SUBJECT" | git commit --no-verify -F -
       fi
+
+  - id: get_commit_hash
+    description: Capture commit hash for output
+    command: git rev-parse HEAD
+    output:
+      - commit_hash
 
   - id: push_changes
     description: Push to origin
