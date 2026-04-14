@@ -229,9 +229,10 @@ async function generateTitle(options: {
 
   try {
     // Try @oh-my-pi/pi-ai first (oh-my-pi binary), then fall back to @mariozechner/pi-ai (opencode)
-    let piAi: any;
+    let complete: typeof completeFn;
     try {
-      piAi = await import("@oh-my-pi/pi-ai");
+      const piAi = await import("@oh-my-pi/pi-ai");
+      complete = piAi.complete as typeof completeFn;
     } catch (error) {
       // Only catch module-not-found errors; re-throw actual package errors
       if (
@@ -241,12 +242,12 @@ async function generateTitle(options: {
           (error as any).code === "MODULE_NOT_FOUND"
         )
       ) {
-        piAi = await import("@mariozechner/pi-ai");
+        const piAi = await import("@mariozechner/pi-ai");
+        complete = piAi.complete as typeof completeFn;
       } else {
         throw error;
       }
     }
-    const complete = piAi.complete as typeof completeFn;
 
     if (typeof complete !== "function") {
       console.error("complete is not a function from pi-ai");
