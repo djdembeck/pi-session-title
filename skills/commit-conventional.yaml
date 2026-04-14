@@ -21,18 +21,26 @@ steps:
 
   - id: get_staged_files
     description: Get list of staged files
-    command: git diff --cached --name-only -z | tr '\0' '\n'
+    command: git diff --cached --name-only -z
 
   - id: analyze_diffs
     description: Analyze staged diffs for each file
     parallel: true
     for_each_file: true
-    command: git diff --cached --binary --no-color --unified=0 -- "$FILE"
+    command: git diff --cached -M --binary --no-color --unified=0 -- "$FILE"
     output:
       - summary
       - fileType
       - highlights
       - risks
+
+  - id: run_hooks
+    description: Run pre-commit hooks
+    command: |
+      HOOK_PATH=$(git config --get core.hooksPath 2>/dev/null || echo ".git/hooks")
+      if [ -x "$HOOK_PATH/pre-commit" ]; then
+        "$HOOK_PATH/pre-commit" || exit 1
+      fi
 
   - id: generate_commit_message
     description: Generate conventional commit message
@@ -40,21 +48,13 @@ steps:
     input:
       analysis_results: ${analyze_diffs.output}
 
-  - id: run_hooks
-    description: Run pre-commit hooks
-    command: |
-      HOOKS_PATH=$(git config --get core.hooksPath 2>/dev/null || echo ".git/hooks")
-      if [ -f "$HOOKS_PATH/pre-commit" ]; then
-        "$HOOKS_PATH/pre-commit" || exit 1
-      fi
-
   - id: create_commit
     description: Create git commit with conventional message
     command: |
       if [ -n "${generate_commit_message.body}" ]; then
-        git commit -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
+        git commit --no-verify -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
       else
-        git commit -m "${generate_commit_message.subject}"
+        git commit --no-verify -m "${generate_commit_message.subject}"
       fi
 
   - id: push_changes

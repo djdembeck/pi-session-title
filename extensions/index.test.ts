@@ -31,10 +31,10 @@ vi.mock("@mariozechner/pi-ai", async () => {
 
 describe("sessionTitleExtension", () => {
   const originalEnv = { ...process.env };
-  type InputHandler = (event: { text: string; source: string }, ctx: Partial<ExtensionContext>) => Promise<void>;
+  type InputHandler = (event: { text: string; source: string; images?: unknown[] }, ctx: Partial<ExtensionContext>) => Promise<void>;
   type SessionStartHandler = (event: { type: string; reason: string }, ctx: Partial<ExtensionContext>) => Promise<void>;
   type BeforeAgentStartHandler = (
-    event: { type: string; prompt: string; systemPrompt: string; images?: unknown[] },
+    event: { prompt: string; systemPrompt: string; images?: unknown[] },
     ctx: Partial<ExtensionContext>,
   ) => Promise<void>;
   type MockHandler = InputHandler | SessionStartHandler | BeforeAgentStartHandler;
@@ -489,6 +489,16 @@ describe("sessionTitleExtension", () => {
     });
 
     it("should stop immediately when session name API is unavailable", async () => {
+      const fsMock = fs as unknown as {
+        promises: {
+          access: any;
+          readFile: any;
+        };
+      };
+      // Ensure fs throws to simulate unavailable state
+      fsMock.promises.access.mockRejectedValue(new Error("File not found"));
+      fsMock.promises.readFile.mockRejectedValue(new Error("File not found"));
+
       const ctx = createMockContext();
       const handlers: Record<string, MockHandler> = {};
       const piWithoutSessionNaming = {
@@ -503,7 +513,13 @@ describe("sessionTitleExtension", () => {
 
       await inputHandler({ text: "Real prompt", source: "interactive" }, ctx);
 
+      // Verify no fs access happened (early exit when session name API unavailable)
+      expect(fsMock.promises.access).not.toHaveBeenCalled();
+      expect(fsMock.promises.readFile).not.toHaveBeenCalled();
+      // Verify no API call was made
       expect(mockPi.pi.complete).not.toHaveBeenCalled();
+      // Verify no session name was set
+      expect(mockPi.setSessionName).not.toHaveBeenCalled();
     });
 
     it("should not regenerate title if already generated", async () => {
@@ -767,7 +783,7 @@ describe("sessionTitleExtension", () => {
       const beforeAgentStartHandler = mockPi._handlers!["before_agent_start"] as BeforeAgentStartHandler;
 
       await beforeAgentStartHandler(
-        { type: "before_agent_start", prompt: "Print mode prompt", systemPrompt: "", images: undefined },
+        { prompt: "Print mode prompt", systemPrompt: "", images: undefined },
         ctx,
       );
 
@@ -801,7 +817,7 @@ describe("sessionTitleExtension", () => {
       mockPi.pi.complete.mockClear();
 
       await beforeAgentStartHandler(
-        { type: "before_agent_start", prompt: "Interactive prompt", systemPrompt: "", images: undefined },
+        { prompt: "Interactive prompt", systemPrompt: "", images: undefined },
         ctx,
       );
 
@@ -929,7 +945,7 @@ describe("sessionTitleExtension", () => {
       expect(mockPi.setSessionName).not.toHaveBeenCalled();
 
       await beforeAgentStartHandler(
-        { type: "before_agent_start", prompt: "Print mode prompt", systemPrompt: "", images: undefined },
+        { prompt: "Print mode prompt", systemPrompt: "", images: undefined },
         ctx,
       );
 
