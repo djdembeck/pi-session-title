@@ -3,36 +3,8 @@
 /// <reference path="./pi-ai.d.ts" />
 
 // Re-export types from @oh-my-pi/pi-ai
-export type {
-  Model,
-  Api,
-  KnownApi,
-  Provider,
-  KnownProvider,
-  Context,
-  Message,
-  Content,
-  TextContent,
-  ThinkingContent,
-  ImageContent,
-  ToolCall,
-  Tool,
-  StreamOptions,
-  SimpleStreamOptions,
-  Usage,
-  StopReason,
-  AssistantMessage,
-  ThinkingConfig,
-  Effort,
-  ThinkingControlMode,
-  OpenAICompat,
-  ApiSpecificOptions,
-  ApiOptionsMap,
-  AnthropicOptions,
-  CursorExecHandlers,
-  ToolChoice,
-  ServiceTier,
-} from "@oh-my-pi/pi-ai";
+// Re-export only the Model type used by the extension
+export type { Model } from "@oh-my-pi/pi-ai";
 
 
 // Extension function type

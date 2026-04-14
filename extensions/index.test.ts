@@ -1009,14 +1009,23 @@ describe("sessionTitleExtension", () => {
 
   describe("Optional peer dependency fallback", () => {
     it("should use fallback module when primary module fails", async () => {
-      // Get reference to both module mocks
-      const { complete: ohMyPiComplete } = await import("@oh-my-pi/pi-ai");
-      const { complete: mariozechnerComplete } = await import("@mariozechner/pi-ai");
-      
-      // Make @mariozechner/pi-ai complete return the fallback title via mockPi
-      (mariozechnerComplete as any).mockImplementation((...args: unknown[]) => {
-        return mockPi.pi.complete(...args);
-      });
+      vi.resetModules();
+
+      vi.doMock("@oh-my-pi/pi-ai", () => ({
+        get complete() {
+          throw Object.assign(new Error("Cannot find package '@oh-my-pi/pi-ai'"), {
+            code: "ERR_MODULE_NOT_FOUND",
+          });
+        },
+      }));
+
+      vi.doMock("@mariozechner/pi-ai", () => ({
+        complete: vi.fn().mockImplementation(async (...args: unknown[]) => {
+          return mockPi.pi.complete(...args);
+        }),
+      }));
+
+      const { default: sessionTitleExtension } = await import("./index.js");
 
       const fsMock = fs as unknown as {
         promises: {
@@ -1027,7 +1036,6 @@ describe("sessionTitleExtension", () => {
       fsMock.promises.access.mockRejectedValue(new Error("File not found"));
       fsMock.promises.readFile.mockResolvedValue("Test: {{firstMessage}}");
 
-      // Set up mock to return title
       mockPi.pi.complete.mockResolvedValue({
         content: [{ type: "text", text: "Fallback Title" }],
       } as unknown as Awaited<ReturnType<typeof mockPi.pi.complete>>);
@@ -1038,7 +1046,6 @@ describe("sessionTitleExtension", () => {
       const inputHandler = mockPi._handlers!["input"] as InputHandler;
       await inputHandler({ text: "Hello world", source: "user" }, ctx);
 
-      // Verify title was generated and set
       expect(mockPi.pi.complete).toHaveBeenCalled();
       expect(mockPi.setSessionName).toHaveBeenCalled();
     });
