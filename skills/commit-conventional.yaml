@@ -21,7 +21,7 @@ steps:
 
   - id: get_staged_files
     description: Get list of staged files
-    command: git diff --cached --name-status -z | tr '\0' '\n'
+    command: git diff --cached --name-only -z | tr '\0' '\n'
 
   - id: analyze_diffs
     description: Analyze staged diffs for each file
@@ -43,17 +43,18 @@ steps:
   - id: run_hooks
     description: Run pre-commit hooks
     command: |
-      if [ -f .git/hooks/pre-commit ]; then
-        .git/hooks/pre-commit || exit 1
+      HOOKS_PATH=$(git config --get core.hooksPath 2>/dev/null || echo ".git/hooks")
+      if [ -f "$HOOKS_PATH/pre-commit" ]; then
+        "$HOOKS_PATH/pre-commit" || exit 1
       fi
 
   - id: create_commit
     description: Create git commit with conventional message
     command: |
       if [ -n "${generate_commit_message.body}" ]; then
-        git commit --no-verify -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
+        git commit -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
       else
-        git commit --no-verify -m "${generate_commit_message.subject}"
+        git commit -m "${generate_commit_message.subject}"
       fi
 
   - id: push_changes
