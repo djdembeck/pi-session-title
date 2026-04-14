@@ -1,0 +1,7 @@
+fix: correct types export path and improve module fallback handling
+
+- Fix package.json types export to point to proper .d.ts file
+- Add .d.ts files to published package files
+- Update README to document dual-module fallback behavior (@oh-my-pi/pi-ai → @mariozechner/pi-ai)
+- Improve test to use ERR_MODULE_NOT_FOUND error code for accurate module-not-found simulation
+- Reorder release workflow steps for better logical flow

@@ -1,0 +1,80 @@
+name: commit-conventional
+description: Commit and push changes with conventional commit messages
+
+steps:
+  - id: check_status
+    description: Check git status for uncommitted changes
+    command: git status --porcelain
+    validation:
+      - if_empty: return "nothing to commit"
+
+  - id: stage_changes
+    description: Stage all changes if nothing is staged
+    command: |
+      STAGED=$(git status --porcelain | grep "^[^ ?]" | head -1)
+      if [ -z "$STAGED" ]; then
+        git add --all
+        echo "staged"
+      else
+        echo "already_staged"
+      fi
+
+  - id: get_staged_files
+    description: Get list of staged files
+    command: git diff --cached --name-only -z
+
+  - id: analyze_diffs
+    description: Analyze staged diffs for each file
+    parallel: true
+    for_each_file: true
+    command: git diff --cached -M --binary --no-color --unified=0 -- "$FILE"
+    output:
+      - summary
+      - fileType
+      - highlights
+      - risks
+
+  - id: run_hooks
+    description: Run pre-commit hooks
+    command: |
+      HOOK_PATH=$(git config --get core.hooksPath 2>/dev/null || echo ".git/hooks")
+      if [ -x "$HOOK_PATH/pre-commit" ]; then
+        "$HOOK_PATH/pre-commit" || exit 1
+      fi
+
+  - id: generate_commit_message
+    description: Generate conventional commit message
+    skill: commit-msg-generator
+    input:
+      analysis_results: ${analyze_diffs.output}
+
+  - id: create_commit
+    description: Create git commit with conventional message
+    command: |
+      export COMMIT_SUBJECT="${generate_commit_message.subject}"
+      export COMMIT_BODY="${generate_commit_message.body}"
+      if [ -n "$COMMIT_BODY" ]; then
+        printf '%s\n\n%s\n' "$COMMIT_SUBJECT" "$COMMIT_BODY" | git commit --no-verify -F -
+      else
+        printf '%s\n' "$COMMIT_SUBJECT" | git commit --no-verify -F -
+      fi
+
+  - id: get_commit_hash
+    description: Capture commit hash for output
+    command: git rev-parse HEAD
+    output:
+      - commit_hash
+
+  - id: push_changes
+    description: Push to origin
+    command: git push -u origin HEAD
+
+error_handling:
+  - if: hooks_fail
+    return: "Pre-commit hook failed: ${output}"
+  - if: push_fail
+    return: "Push failed: ${error}"
+
+output:
+  - commit_hash
+  - summary

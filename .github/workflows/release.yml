@@ -139,6 +139,21 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
+      - name: Update package.json version
+        if: steps.check_tag.outputs.has_tag == 'false' && steps.bump.outputs.bump_type != 'skip'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          VERSION_NO_V="${NEW_VERSION#v}"
+
+          # Update package.json version
+          npm version "$VERSION_NO_V" --no-git-tag-version
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json
+          git commit -m "chore(release): $NEW_VERSION [skip ci]"
+          git push origin HEAD:main
       - name: Create and push git tag
         id: tag
         if: steps.check_tag.outputs.has_tag == 'false' && steps.bump.outputs.bump_type != 'skip'
@@ -156,8 +171,8 @@ jobs:
             exit 1
           }
 
-          echo "created_tag=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Created and pushed tag: $NEW_VERSION"
+          echo "created_tag=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.has_tag == 'false' && steps.bump.outputs.bump_type != 'skip'
