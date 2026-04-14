@@ -4,16 +4,28 @@ on:
   push:
     tags:
       - "v*"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
