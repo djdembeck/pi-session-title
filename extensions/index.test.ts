@@ -1055,6 +1055,8 @@ describe("sessionTitleExtension", () => {
       vi.resetModules();
     });
 
+    // Skipped: Error-throwing path needs refactor; tracked for fix
+    // Skipped: Error-throwing path needs refactor; tracked for fix
     it.skip("should not crash when getApiKeyAndHeaders throws", async () => {
 
       const fsMock = fs as unknown as {

@@ -21,17 +21,13 @@ steps:
 
   - id: get_staged_files
     description: Get list of staged files
-    command: git status --porcelain | grep "^[^ ?]" | awk '{print $2}'
+    command: git diff --cached --name-status -z | tr '\0' '\n'
 
   - id: analyze_diffs
     description: Analyze staged diffs for each file
     parallel: true
     for_each_file: true
-    command: |
-      HEAD_CONTENT=$(git show HEAD:$FILE 2>/dev/null || echo "")
-      STAGED_CONTENT=$(git show :$FILE 2>/dev/null || echo "")
-      echo "===DIFF==="
-      diff -u <(echo "$HEAD_CONTENT") <(echo "$STAGED_CONTENT") 2>&1 || true
+    command: git diff --cached --binary --no-color --unified=0 -- "$FILE"
     output:
       - summary
       - fileType
@@ -44,20 +40,20 @@ steps:
     input:
       analysis_results: ${analyze_diffs.output}
 
-  - id: create_commit
-    description: Create git commit with conventional message
-    command: |
-      if [ -n "${generate_commit_message.body}" ]; then
-        git commit -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
-      else
-        git commit -m "${generate_commit_message.subject}"
-      fi
-
   - id: run_hooks
     description: Run pre-commit hooks
     command: |
       if [ -f .git/hooks/pre-commit ]; then
         .git/hooks/pre-commit || exit 1
+      fi
+
+  - id: create_commit
+    description: Create git commit with conventional message
+    command: |
+      if [ -n "${generate_commit_message.body}" ]; then
+        git commit --no-verify -m "${generate_commit_message.subject}" -m "${generate_commit_message.body}"
+      else
+        git commit --no-verify -m "${generate_commit_message.subject}"
       fi
 
   - id: push_changes
