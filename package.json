@@ -1,6 +1,6 @@
 {
   "name": "pi-session-title",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Session-title extension for pi-compatible runtimes, including oh-my-pi",
   "keywords": [
     "pi-package",
